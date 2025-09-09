@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Magyar Politikai TikTok Tartalom Generátor</title>
+  <style>
+    :root{--w:900px;--primary:#2563eb;--success:#16a34a;--warning:#ea580c;--gray:#6b7280}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:var(--w);margin:30px auto;padding:0 20px;background:#f8fafc;color:#111;line-height:1.6}
+    
+    .header{text-align:center;margin-bottom:32px;padding:24px;background:linear-gradient(135deg,var(--primary),#1d4ed8);color:white;border-radius:16px}
+    h1{margin:0 0 8px;font-size:28px;font-weight:700}
+    .lead{margin:0;font-size:16px;opacity:0.9}
+    
+    .form-section{background:white;padding:24px;border-radius:12px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}
+    .section-title{font-size:18px;font-weight:600;margin:0 0 16px;color:var(--primary);border-bottom:2px solid #e2e8f0;padding-bottom:8px}
+    
+    label{display:block;margin:16px 0 6px;font-weight:600;color:#374151}
+    input,select,textarea{width:100%;padding:12px 16px;border:2px solid #e5e7eb;border-radius:10px;background:#fff;font-size:14px;transition:border-color 0.2s}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)}
+    textarea{resize:vertical;font-family:inherit}
+    
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+    .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+    
+    .checkbox-group{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}
+    .checkbox-item{display:flex;align-items:center;padding:8px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;transition:all 0.2s}
+    .checkbox-item:hover{background:#e0f2fe}
+    .checkbox-item input{width:auto;margin-right:8px}
+    
+    .hashtag-suggestions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .hashtag-btn{background:#e0f2fe;color:#0369a1;padding:6px 12px;border:none;border-radius:20px;font-size:12px;cursor:pointer;transition:all 0.2s}
+    .hashtag-btn:hover{background:#0369a1;color:white}
+    
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}
+    button{padding:14px 20px;border:0;border-radius:10px;cursor:pointer;font-weight:600;font-size:16px;transition:all 0.2s}
+    .primary{background:var(--primary);color:#fff}
+    .primary:hover{background:#1d4ed8}
+    .secondary{background:#f3f4f6;color:#374151}
+    .secondary:hover{background:#e5e7eb}
+    
+    small{color:var(--gray);font-size:13px;margin-top:4px;display:block}
+    .help-text{background:#eff6ff;border:1px solid #bfdbfe;padding:12px;border-radius:8px;margin-top:8px;font-size:13px;color:#1e40af}
+    
+    #msg{margin-top:16px;padding:12px;border-radius:8px;font-weight:600}
+    .ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+    .pending{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}
+    .err{background:#fee2e2;color:#dc2626;border:1px solid #fecaca}
+    
+    .advanced-toggle{cursor:pointer;color:var(--primary);text-decoration:underline;font-size:14px;margin:16px 0}
+    .advanced-section{display:none;margin-top:16px;padding:16px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb}
+    .advanced-section.show{display:block}
+    
+    @media (max-width: 768px) {
+      .row{grid-template-columns:1fr}
+      .row-3{grid-template-columns:1fr}
+      .actions{grid-template-columns:1fr}
+      body{padding:0 16px}
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Magyar Politikai TikTok Tartalom Generátor</h1>
+    <p class="lead">Intelligens tartalom ajánlások magyar politikusoknak és szervezeteknek</p>
+  </div>
+
+  <form id="configForm"
+        method="post"
+        action="https://padavan1129.app.n8n.cloud/webhook/ui-save"
+        target="hidden_iframe">
+
+    <!-- Organization Info Section -->
+    <div class="form-section">
+      <h2 class="section-title">Szervezet adatok</h2>
+      
+      <div class="row">
+        <div>
+          <label for="user_id">Felhasználó azonosító</label>
+          <input id="user_id" name="user_id" value="demo-user-1" required />
+          <small>Egyedi azonosító a beállítások tárolásához</small>
+        </div>
+        <div>
+          <label for="organization_type">Szervezet típusa</label>
+          <select id="organization_type" name="organization_type" required>
+            <option value="">Válassz típust...</option>
+            <option value="ministry">Minisztérium</option>
+            <option value="party">Politikai párt</option>
+            <option value="agency">Kormányhivatal</option>
+            <option value="journalist">Újságíró</option>
+            <option value="ngo">Civil szervezet</option>
+            <option value="consultant">Politikai tanácsadó</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="organization_name">Szervezet neve (opcionális)</label>
+          <input id="organization_name" name="organization_name" placeholder="pl. Belügyminisztérium" />
+        </div>
+        <div>
+          <label for="region">Régió/Hatókör</label>
+          <select id="region" name="region">
+            <option value="budapest">Budapest</option>
+            <option value="pest">Pest megye</option>
+            <option value="videk">Vidék</option>
+            <option value="nagyvarosok">Nagyvárosok</option>
+            <option value="HU" selected>Egész Magyarország</option>
+            <option value="EU">EU kontextus</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Request Section -->
+    <div class="form-section">
+      <h2 class="section-title">Tartalom kérés</h2>
+      
+      <label for="natural_prompt">Természetes nyelvi kérés</label>
+      <textarea id="natural_prompt" name="natural_prompt" rows="3" 
+                placeholder="Például: Hogyan kommunikáljuk az új egészségügyi reformot a fiataloknak? Milyen TikTok tartalmakat készítsünk a választási kampányhoz?"></textarea>
+      <div class="help-text">
+        💡 Tipp: Írj természetesen, mintha egy kollégádnak kérdeznél. Az AI megérti a kontextust és releváns ötleteket generál.
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="target_audience">Elsődleges célközönség</label>
+          <select id="target_audience" name="target_audience">
+            <option value="general">Általános közönség</option>
+            <option value="fiatalok">18-35 évesek</option>
+            <option value="kozepkor">36-55 évesek</option>
+            <option value="idosek">55+ évesek</option>
+            <option value="videk_lakossag">Vidéki lakosság</option>
+            <option value="varosi">Városi lakosság</option>
+            <option value="egyetemistak">Egyetemisták</option>
+            <option value="dolgozok">Dolgozó réteg</option>
+          </select>
+        </div>
+        <div>
+          <label for="content_tone">Kommunikációs stílus</label>
+          <select id="content_tone" name="content_tone">
+            <option value="formal">Hivatalos, informatív</option>
+            <option value="friendly">Barátságos, személyes</option>
+            <option value="energetic">Energikus, fiatalos</option>
+            <option value="authoritative">Tekintélyes, szakmai</option>
+            <option value="empathetic">Empatikus, megértő</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Topics and Keywords Section -->
+    <div class="form-section">
+      <h2 class="section-title">Témák és kulcsszavak</h2>
+      
+      <label for="topics">Fő témák / hashtagek</label>
+      <textarea id="topics" name="topics" rows="2" placeholder="#egészségügy #reform #fiatalok kampány oktatás"></textarea>
+      <small>Írd be a témákat hashtagekkel (#) vagy kulcsszavakként. A rendszer automatikusan feldolgozza.</small>
+      
+      <div class="hashtag-suggestions">
+        <span style="font-weight:600;margin-right:8px;">Népszerű magyar témák:</span>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#magyarország')">#magyarország</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#budapest')">#budapest</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#politika')">#politika</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#gazdaság')">#gazdaság</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#egészségügy')">#egészségügy</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#oktatás')">#oktatás</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#család')">#család</button>
+        <button type="button" class="hashtag-btn" onclick="addHashtag('#eu')">#eu</button>
+      </div>
+    </div>
+
+    <!-- Contact and Delivery Section -->
+    <div class="form-section">
+      <h2 class="section-title">Kapcsolat és kézbesítés</h2>
+      
+      <label for="emails">E-mail címek (vessző vagy szóköz elválasztva)</label>
+      <input id="emails" name="emails" placeholder="sajtos@party.hu, kollegam@miniszterium.hu" required />
+      <small>IDE érkezik meg a generált PDF riport az ötletekkel</small>
+      
+      <div class="row">
+        <div>
+          <label for="delivery_format">Kézbesítési formátum</label>
+          <select id="delivery_format" name="delivery_format">
+            <option value="pdf">PDF riport</option>
+            <option value="email_html">HTML e-mail</option>
+            <option value="both" selected>Mindkettő</option>
+          </select>
+        </div>
+        <div>
+          <label for="run_now_sel">Futtatás</label>
+          <select id="run_now_sel">
+            <option value="0">Csak mentés</option>
+            <option value="1" selected>Mentés és azonnali futtatás</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Advanced Options (Collapsible) -->
+    <div class="advanced-toggle" onclick="toggleAdvanced()">
+      ⚙️ Speciális beállítások (opcionális)
+    </div>
+    <div class="advanced-section" id="advanced-options">
+      <div class="row">
+        <div>
+          <label for="exclude_topics">Kerülendő témák</label>
+          <input id="exclude_topics" name="exclude_topics" 
+                 placeholder="pl. migráció, koronavírus" />
+          <small>Ezeket a témákat kerüli a generátor</small>
+        </div>
+        <div>
+          <label for="priority_keywords">Prioritási kulcsszavak</label>
+          <input id="priority_keywords" name="priority_keywords" 
+                 placeholder="pl. innováció, digitalizáció" />
+          <small>Ezeket a kulcsszavakat előnyben részesíti</small>
+        </div>
+      </div>
+      
+      <div class="checkbox-group">
+        <div class="checkbox-item">
+          <input type="checkbox" id="use_trending" name="use_trending" checked>
+          <label for="use_trending">Trending témák bevonása</label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="regional_focus" name="regional_focus" checked>
+          <label for="regional_focus">Regionális fókusz</label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="competitor_analysis" name="competitor_analysis">
+          <label for="competitor_analysis">Versenytárs elemzés</label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="video_inspiration" name="video_inspiration" checked>
+          <label for="video_inspiration">Videó inspirációk keresése</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden fields -->
+    <input type="hidden" id="run_now" name="run_now" value="1" />
+
+    <!-- Action buttons -->
+    <div class="actions">
+      <button type="submit" class="secondary">💾 Csak mentés</button>
+      <button type="submit" class="primary" id="saveRun">🚀 Mentés és riport generálás</button>
+    </div>
+
+    <iframe name="hidden_iframe" id="hidden_iframe" style="display:none"></iframe>
+  </form>
+
+  <p id="msg"></p>
+
+  <script>
+    const form = document.getElementById('configForm');
+    const iframe = document.getElementById('hidden_iframe');
+    const msg = document.getElementById('msg');
+    const runHidden = document.getElementById('run_now');
+    const runSelect = document.getElementById('run_now_sel');
+    const saveRunBtn = document.getElementById('saveRun');
+
+    // Keep hidden run_now in sync with select
+    runSelect.addEventListener('change', () => runHidden.value = runSelect.value);
+    
+    // Ensure second button always sets run_now=1
+    saveRunBtn.addEventListener('click', () => { runHidden.value = '1'; });
+
+    // First button sets run_now=0
+    document.querySelector('.secondary').addEventListener('click', () => { runHidden.value = '0'; });
+
+    form.addEventListener('submit', () => {
+      msg.className = 'pending';
+      msg.textContent = '⏳ Feldolgozás folyamatban... Ez néhány percet igénybe vehet.';
+      setTimeout(() => { runHidden.value = runSelect.value; }, 0);
+    });
+
+    // When n8n responds, iframe loads → show success
+    iframe.addEventListener('load', () => {
+      msg.className = 'ok';
+      msg.textContent = '✅ Sikeresen elmentve! A riport hamarosan megérkezik az e-mailbe.';
+    });
+
+    // Advanced options toggle
+    function toggleAdvanced() {
+      const section = document.getElementById('advanced-options');
+      section.classList.toggle('show');
+    }
+
+    // Hashtag helper function
+    function addHashtag(hashtag) {
+      const topicsField = document.getElementById('topics');
+      const current = topicsField.value;
+      if (!current.includes(hashtag)) {
+        topicsField.value = current ? current + ' ' + hashtag : hashtag;
+      }
+    }
+
+    // Organization type change handler
+    document.getElementById('organization_type').addEventListener('change', function() {
+      const type = this.value;
+      const nameField = document.getElementById('organization_name');
+      const promptField = document.getElementById('natural_prompt');
+      
+      // Update placeholder based on organization type
+      switch(type) {
+        case 'ministry':
+          nameField.placeholder = 'pl. Belügyminisztérium, Pénzügyminisztérium';
+          promptField.placeholder = 'Hogyan kommunikáljuk a kormány új intézkedését a lakosság felé?';
+          break;
+        case 'party':
+          nameField.placeholder = 'pl. Fidesz, MSZP, DK';
+          promptField.placeholder = 'Milyen kampány tartalmakat készítsünk a következő választásokra?';
+          break;
+        case 'journalist':
+          nameField.placeholder = 'pl. Index.hu, 444.hu';
+          promptField.placeholder = 'Hogyan mutathatnánk be ezt a politikai témát közérthetően?';
+          break;
+        default:
+          nameField.placeholder = 'Szervezet teljes neve';
+          promptField.placeholder = 'Írj le, milyen tartalmat szeretnél...';
+      }
+    });
+
+    // Guard against test URL
+    if (form.action.includes('/webhook-test/')) {
+      msg.className = 'err';
+      msg.textContent = '⚠️ Figyelem: a form most a TEST webhookra mutat. Cseréld Production URL-re!';
+    }
+
+    // Auto-expand textarea on input
+    document.getElementById('natural_prompt').addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = this.scrollHeight + 'px';
+    });
+  </script>
+
+  <noscript>A beküldés JavaScript nélkül is működik, de kevesebb funkcióval.</noscript>
+</body>
+</html>
