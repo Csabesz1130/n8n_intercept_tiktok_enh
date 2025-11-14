@@ -1,0 +1,1437 @@
+{
+  "name": "whatcanitdo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-hungarian-content",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f29bee96-e755-4021-833d-b92842f8c7cb",
+      "name": "Content Generation Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -4320,
+        240
+      ],
+      "webhookId": "25b29270-c080-4487-8933-c0dafffb89f8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize inbound (JSON or form) + base fields + fingerprint\nconst crypto = require('crypto');\nconst body = $json.body && Object.keys($json.body).length ? $json.body : $json;\n\nfunction arr(v){ if(Array.isArray(v)) return v; if(!v) return []; const s=String(v); return s.split(/[;,\\n\\r\\t ]+/).map(x=>x.trim()).filter(Boolean); }\n\nconst user_id  = (body.user_id || 'demo-user-1').toString().trim();\nconst keyword  = (body.keyword || body.topics || '').toString().trim();\nconst email    = (body.email || body.emails || '').toString().trim();\nconst region   = (body.region || 'HU').toString().trim();\nconst orgType  = (body.organization_type || 'party').toString().trim();\nconst topics   = arr(body.topics).map(t=>t.startsWith('#')?t:('#'+t.toLowerCase()));\nconst prompt   = body.prompt || '';\n\nconst request_basis = JSON.stringify({user_id, keyword, topics, region, orgType});\nconst request_fingerprint = crypto.createHash('sha1').update(request_basis).digest('hex');\n\nreturn [{json:{ user_id, keyword, email, region, organization_type: orgType, topics, prompt, request_fingerprint }}];"
+      },
+      "id": "66ba95ea-baaa-4f6d-9711-00ffdbc35cc2",
+      "name": "Content Request Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4080,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/user_preferences?select=*&user_id=eq.{{$json.user_id}}&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "38e42566-68d9-4cc8-b7db-988b67ce221f",
+      "name": "Load User Preferences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3840,
+        240
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge user request + preferences → base context + defaults\nconst prefs = Array.isArray($json) ? ($json[0]||{}) : ($json || {});\nconst req   = $items('Content Request Processor')[0].json;\n\nconst account = {\n  niche: prefs.niche || 'HU politics',\n  redLines: prefs.red_lines || ['no hate','no doxxing','no unverified health claims'],\n  preferredFormats: prefs.preferred_formats || ['Green Screen','Stitch','Duet'],\n  targetAudience: prefs.target_audience || 'HU voters interested in policy',\n  tone: prefs.tone || 'clear, nonpartisan, assertive',\n  brandWords: prefs.brand_words || ['tények','adat','hitelesség'],\n  language: prefs.language || 'hu-HU'\n};\n\nreturn [{json:{...req, account}}];"
+      },
+      "id": "a35a3cd6-afc1-4721-b4fb-577244efa905",
+      "name": "Merge User Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3600,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Memory Check Init → compute combined_fingerprint (request + org, region)\nconst crypto = require('crypto');\nconst {user_id, keyword, region, organization_type, topics, request_fingerprint} = $json;\nconst combined_basis = JSON.stringify({user_id, keyword, region, organization_type, topics, request_fingerprint});\nconst combined_fingerprint = crypto.createHash('sha1').update(combined_basis).digest('hex');\nreturn [{json:{...$json, combined_fingerprint}}];"
+      },
+      "id": "b203187e-3fa4-4382-b443-1d5c5d5c9028",
+      "name": "Memory Check Init",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3360,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/generated_ideas?select=*&user_id=eq.{{$json.user_id}}&request_fingerprint=eq.{{$json.request_fingerprint}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "4713b01a-675c-4fa1-a9c2-afca3c160ee3",
+      "name": "Load Previous Ideas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3120,
+        144
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/theme_coverage?select=*&user_id=eq.{{$items('Memory Check Init')[0].json.user_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "e0b0f554-fc39-4414-b39e-6e56d15a5b1f",
+      "name": "Load Theme Coverage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3120,
+        352
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide duplicate using previous ideas; simple heuristic: if any rows in last 7d\nconst prev = Array.isArray($json) ? $json : [];\nconst base = $items('Memory Check Init')[0].json;\nlet duplicate = false;\nconst now = Date.now();\nfor(const r of prev){\n  const t = new Date(r.created_at || r.generated_at || Date.now()).getTime();\n  if(now - t < 7*24*3600*1000){ duplicate = true; break; }\n}\nreturn [{json:{...base, duplicate}}];"
+      },
+      "id": "e8c6000b-e2ba-4a76-882d-6045a6076a07",
+      "name": "Memory Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2880,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "76bb9899-f1da-40cc-bb2d-590006831b15",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3f1a50d9-55e7-43c9-b66b-74b4d498d407",
+      "name": "Should Generate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build prompts from memory and prefs\nconst {account, keyword, topics} = $json;\nconst sys = `You are a senior TikTok political content strategist & editor.\\nFocus: Hungarian politics. Keep content accurate, nonpartisan, and safe.\\nRed lines: ${(account.redLines||[]).join(', ')}`;\nconst user = `Keyword: ${keyword}\\nTopics: ${(topics||[]).join(', ')}\\nAccount: ${JSON.stringify(account)}`;\nreturn [{json:{...$json, system_prompt: sys, user_prompt: user}}];"
+      },
+      "id": "8bf9402d-3087-4ac7-89a0-05cf371363a6",
+      "name": "Enhanced Prompt Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Bridge keeps prompts + request in item json for downstream nodes\nreturn [{json:$json}];"
+      },
+      "id": "8b72d561-89d2-48f7-888e-9b299a6e807a",
+      "name": "Memory Integration Bridge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/clockworks~tiktok-profile-scraper/runs?waitForFinish=120\n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"profiles\":[\"{{ $json.tiktok_username || 'apifyoffice' }}\"],\"profileSections\":[\"Videos\",\"Info\"],\"maxPostsPerProfile\":20,\"shouldDownloadCovers\":false,\"shouldDownloadVideos\":false}",
+        "options": {}
+      },
+      "id": "23d046ad-0cd2-4556-acc4-328c840f588e",
+      "name": "TikTok profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1920,
+        32
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "y1SoeeyCm4sC0Zeh",
+          "name": "Apify (n8n-intercept)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $json.data?.defaultDatasetId || $json.defaultDatasetId || $json.datasetId }}/items?clean=true&format=json\n",
+        "options": {}
+      },
+      "id": "ec42465c-9995-4153-a51d-f31b15c486be",
+      "name": "Get Apify Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1680,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize profile → samplePosts\nconst rows = Array.isArray($json)?$json:($json.items||$json.data?.items||[]);\nconst toInt=v=>Number.isFinite(+v)?+v:0;\nconst list = rows.map(v=>({\n  url: v.webVideoUrl||v.url||v.shareMeta?.shareUrl||'',\n  description: v.text||v.description||'',\n  hashtags: Array.isArray(v.hashtags)?v.hashtags.join(','):(v.hashtags||''),\n  plays: toInt(v.playCount||v.stats?.playCount),\n  likes: toInt(v.diggCount||v.stats?.diggCount||v.likes),\n  shares: toInt(v.shareCount||v.stats?.shareCount),\n  comments: toInt(v.commentCount||v.stats?.commentCount),\n  username: v.authorMeta?.uniqueId||v.author?.uniqueId||''\n})).filter(x=>x.url);\nreturn list.map(x=>({json:x}));"
+      },
+      "id": "fb7edd4c-8a25-4b41-8eb4-71326905be07",
+      "name": "Process tiktok user",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/clockworks~free-tiktok-scraper/runs?waitForFinish=120\n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"hashtags\":[\"{{ $items('Memory Integration Bridge')[0].json.keyword }}\"],\"search\":[\"{{ $items('Memory Integration Bridge')[0].json.keyword }}\"],\"resultsPerPage\":20,\"maxResults\":100,\"shouldDownloadCovers\":false,\"shouldDownloadVideos\":false}",
+        "options": {}
+      },
+      "id": "a5b1470d-d630-4d1a-a51d-da3817cbd251",
+      "name": "Apify node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1920,
+        272
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "y1SoeeyCm4sC0Zeh",
+          "name": "Apify (n8n-intercept)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $json.data?.defaultDatasetId || $json.defaultDatasetId || $json.datasetId }}/items?clean=true&format=json&limit=1000\n",
+        "options": {}
+      },
+      "id": "dde2309e-0654-4164-971b-3bade70a4558",
+      "name": "Get pol. posts results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1680,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize search results → array in {items}\nconst rows = Array.isArray($json)?$json:($json.items||$json.data?.items||[]);\nconst toInt=v=>Number.isFinite(+v)?+v:0;\nconst normalized = rows.map(p=>({\n  url: p.webVideoUrl||p.url||p.shareMeta?.shareUrl||'',\n  description: p.text||p.description||'',\n  hashtags: Array.isArray(p.hashtags)?p.hashtags.join(','):(p.hashtags||''),\n  play_count: toInt(p.playCount||p.stats?.playCount),\n  digg_count: toInt(p.diggCount||p.stats?.diggCount||p.likes),\n  share_count: toInt(p.shareCount||p.stats?.shareCount),\n  comment_count: toInt(p.commentCount||p.stats?.commentCount),\n  profile_username: p.authorMeta?.uniqueId||p.author?.uniqueId||''\n})).filter(r=>r.url);\nreturn [{json:{items:normalized}}];"
+      },
+      "id": "021f2cb5-257e-4c3c-a838-881f8cea9306",
+      "name": "Process results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced Content Aggregator (merges both pipelines) → keyword, samplePosts, topTags, account, email, tiktok_username\nconst inputs = $input.all();\nconst seen = new Set();\nconst toInt=v=>Number.isFinite(+v)?+v:0;\nfunction coerce(obj){\n  const list = Array.isArray(obj)?obj: (Array.isArray(obj.items)?obj.items: (Array.isArray(obj.data?.items)?obj.data.items: []));\n  return list.map(p=>({\n    url: p.url||p.webVideoUrl||p.shareMeta?.shareUrl||'',\n    description: p.description||p.text||'',\n    hashtags: Array.isArray(p.hashtags)?p.hashtags.join(','):(p.hashtags||''),\n    plays: toInt(p.play_count||p.playCount),\n    likes: toInt(p.digg_count||p.diggCount),\n    shares: toInt(p.share_count||p.shareCount),\n    comments: toInt(p.comment_count||p.commentCount),\n    username: p.username||p.profile_username||''\n  }));\n}\n\nlet allPosts=[]; let keyword=''; let account=null; let email=''; let tiktok_username=''; \nlet organization_type=''; let region=''; let prompt=''; let topics=[];\n\nfor(const {json} of inputs){\n  if(!keyword) keyword = json.keyword||'';\n  if(!email && json.email) email = json.email;\n  if(!account && json.account) account = json.account;\n  if(!tiktok_username && json.tiktok_username) tiktok_username = json.tiktok_username;\n  if(!organization_type && json.organization_type) organization_type = json.organization_type;\n  if(!region && json.region) region = json.region;\n  if(!prompt && json.prompt) prompt = json.prompt;\n  if(!topics.length && json.topics) topics = json.topics;\n  \n  if(Array.isArray(json)) allPosts.push(...coerce(json));\n  else if(json.items||json.data?.items) allPosts.push(...coerce(json));\n  else allPosts.push(json);\n}\n\nallPosts = allPosts.filter(p=>{const k=p.url.trim(); if(!k||seen.has(k))return false; seen.add(k); return true;});\nconst tagCount={};\nfor(const p of allPosts){ (p.hashtags||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(t=>tagCount[t]=(tagCount[t]||0)+1); }\nconst topTags = Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([tag,count])=>({tag,count}));\nallPosts.sort((a,b)=> toInt(b.shares)-toInt(a.shares) || toInt(b.plays)-toInt(a.plays));\nconst samplePosts = allPosts.slice(0,60);\n\n// BUILD PROPER PROMPTS HERE\nconst ctx = $items('Memory Integration Bridge')[0]?.json || {};\n\n// Create comprehensive system prompt\nconst system_prompt = `Te egy tapasztalt magyar TikTok politikai tartalom stratéga vagy, aki specializálódott a magyar politikai kontextusra.\n\nFELADATOD: Professzionális, politikailag releváns TikTok videó ötleteket generálni magyar közönségnek.\n\nSZERVEZET TÍPUSA: ${organization_type || 'általános'}\nRÉGIÓ: ${region || 'országos'}\n${tiktok_username ? `TIKTOK PROFIL: @${tiktok_username}` : ''}\n\nÚTMUTATÁSOK:\n- Magyar politikai kontextusra koncentrálj\n- Használj aktuális, releváns témákat\n- Minden ötlet legyen praktikus és megvalósítható\n- Tartsd szem előtt a ${organization_type || 'szervezet'} céljait\n- Figyelj a ${region || 'célközönség'} regionális sajátosságaira\n\nKIMENETI FORMÁTUM: JSON formátumban válaszolj \"ideas\" arrayjel, ahol minden ötlet tartalmazza:\n- id: szám\n- hook: vonzó cím\n- format: videó típus (pl. \"Talking Head\", \"Green Screen\", \"Demo\")\n- concept: részletes koncepció leírás\n- beats: [array of string] - videó szerkezet\n- onScreenText: [array] - képernyőn megjelenő szövegek\n- caption: TikTok leírás hashtagekkel\n- CTA: call to action\n- stitchOrDuet: \"Standalone\", \"Stitch\", vagy \"Duet\"\n- safetyNotes: [array] - biztonsági megjegyzések\n- saveValue: miért értékes ez a tartalom\n- sourcePrompts: [array] - ajánlott források\n\nVÁLASZOLJ KIZÁRÓLAG JSON FORMÁTUMBAN!`;\n\n// Create comprehensive user prompt\nconst topHashtags = topTags.slice(0,5).map(t => t.tag).join(', ');\nconst topicsList = Array.isArray(topics) ? topics.join(', ') : '';\n\nconst user_prompt = `KULCSSZÓ: \"${keyword}\"\n\nSZERVEZET ADATOK:\n- Típus: ${organization_type}\n- Régió: ${region}\n- Témák: ${topicsList}\n${tiktok_username ? `- TikTok: @${tiktok_username}` : ''}\n\n${prompt ? `EGYEDI KÉRÉS: \"${prompt}\"` : ''}\n\nTRENDING HASHTAG-EK: ${topHashtags}\n\nMINTAVIDÉÓK ELEMZÉSE:\n${samplePosts.slice(0,5).map(p => `\n- ${p.description.substring(0,100)}... \n  Engagement: ${p.likes} like, ${p.shares} share, ${p.comments} comment`).join('')}\n\nGENERÁLJ 5-8 KONKRÉT, MAGYAR POLITIKAI KONTEXTUSBAN RELEVÁNS TIKTOK VIDEÓ ÖTLETET A \"${keyword}\" TÉMÁBAN!\n\nMinden ötlet legyen:\n- Praktikus és megvalósítható\n- Politikailag megfelelő és professzionális  \n- Magyar közönségre szabott\n- Aktuális és releváns\n\nJSON formátumban válaszolj!`;\n\nreturn [{json:{ \n  keyword: keyword||ctx.keyword, \n  samplePosts, \n  topTags, \n  account: ctx.account||account, \n  email: ctx.email||email, \n  tiktok_username: ctx.tiktok_username||tiktok_username||null,\n  organization_type: organization_type,\n  region: region,\n  topics: topics,\n  // ADD THESE PROPERLY GENERATED PROMPTS:\n  system_prompt: system_prompt,\n  user_prompt: user_prompt\n}}];"
+      },
+      "id": "1fae2840-9c55-4934-b379-7bba906dc942",
+      "name": "Enhanced Content Aggregator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5-2025-08-07",
+          "mode": "list",
+          "cachedResultName": "GPT-5-2025-08-07"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{$json.system_prompt || 'You are a senior TikTok political content strategist...'}}",
+              "role": "system"
+            },
+            {
+              "content": "={{$json.user_prompt || ('Keyword: ' + $json.keyword + '\\n\\nSample posts: ' + JSON.stringify($json.samplePosts || []))}}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "1a8c8a0b-f9b3-4ff9-97e9-ea739030d84f",
+      "name": "Message a model",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -960,
+        144
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "33X4kPnH6bCSbjcu",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Post-GPT Ideas Extractor - Fixed for multiple GPT response formats\nconsole.log('🔍 Extracting ideas from GPT response...');\n\n// Handle multiple possible GPT response formats\nlet ideas = [];\nconst rawResponse = $json;\n\nconsole.log('Raw GPT response structure:', Object.keys(rawResponse));\n\n// Try different extraction paths\nif (rawResponse.message?.content?.ideas) {\n  ideas = rawResponse.message.content.ideas;\n  console.log('✅ Found ideas in message.content.ideas');\n} else if (rawResponse.content?.ideas) {\n  ideas = rawResponse.content.ideas;\n  console.log('✅ Found ideas in content.ideas');\n} else if (rawResponse.ideas) {\n  ideas = rawResponse.ideas;\n  console.log('✅ Found ideas in root.ideas');\n} else if (rawResponse.message?.content) {\n  // Try to parse JSON from content string\n  try {\n    const contentObj = JSON.parse(rawResponse.message.content);\n    if (contentObj.ideas) {\n      ideas = contentObj.ideas;\n      console.log('✅ Found ideas by parsing message.content JSON');\n    }\n  } catch (e) {\n    console.log('⚠️ Could not parse message.content as JSON');\n  }\n} else if (typeof rawResponse.content === 'string') {\n  // Try to parse content string as JSON\n  try {\n    const contentObj = JSON.parse(rawResponse.content);\n    if (contentObj.ideas) {\n      ideas = contentObj.ideas;\n      console.log('✅ Found ideas by parsing content JSON');\n    }\n  } catch (e) {\n    console.log('⚠️ Could not parse content as JSON');\n  }\n}\n\n// Validate ideas array\nif (!Array.isArray(ideas)) {\n  console.log('⚠️ Ideas is not an array, converting...');\n  ideas = [];\n}\n\nconsole.log(`📊 Extracted ${ideas.length} ideas`);\n\n// Debug: Log first idea structure if available\nif (ideas.length > 0) {\n  console.log('First idea structure:', Object.keys(ideas[0]));\n  console.log('First idea sample:', {\n    hook: ideas[0].hook,\n    concept: ideas[0].concept?.substring(0, 50) + '...'\n  });\n}\n\n// If no ideas found, create fallback\nif (ideas.length === 0) {\n  console.log('🚨 No ideas extracted, creating fallback ideas...');\n  \n  const keyword = $items('Enhanced Content Aggregator')[0]?.json?.keyword || 'politika';\n  \n  ideas = [\n    {\n      id: 1,\n      hook: `${keyword} - Mi a helyzet jelenleg?`,\n      format: \"Talking Head\",\n      concept: `Egyszerű összefoglaló videó a ${keyword} témában, ahol elmagyarázod a jelenlegi helyzetet.`,\n      beats: [\"Bevezetés\", \"Főbb pontok\", \"Következtetés\"],\n      onScreenText: [\"TÉNYEK\", \"ADATOK\", \"KÖVETKEZTETÉS\"],\n      caption: `${keyword} egyszerűen elmagyarázva #magyar #politika`,\n      CTA: \"Mit gondolsz erről?\",\n      stitchOrDuet: \"Standalone\",\n      safetyNotes: [\"Csak ellenőrzött tények\", \"Pártatlan megközelítés\"],\n      saveValue: \"Hasznos összefoglaló\",\n      sourcePrompts: [\"Hivatalos statisztikák\", \"Megbízható híroldalak\"]\n    },\n    {\n      id: 2,\n      hook: `${keyword} - Gyakori kérdések`,\n      format: \"Green Screen\",\n      concept: `Q&A formátumban válaszolj a ${keyword} témával kapcsolatos gyakori kérdésekre.`,\n      beats: [\"Kérdés felvetése\", \"Válasz adása\", \"Forrás megjelölése\"],\n      onScreenText: [\"KÉRDÉS\", \"VÁLASZ\", \"FORRÁS\"],\n      caption: `${keyword} GYIK #kérdések #válaszok`,\n      CTA: \"Van még kérdésed?\",\n      stitchOrDuet: \"Standalone\",\n      safetyNotes: [\"Ellenőrzött információk\", \"Objektív válaszok\"],\n      saveValue: \"Praktikus információk\",\n      sourcePrompts: [\"Szakértői vélemények\", \"Hivatalos dokumentumok\"]\n    }\n  ];\n}\n\nreturn [{\n  json: {\n    ideas: ideas,\n    ideas_count: ideas.length,\n    extraction_successful: ideas.length > 0,\n    extraction_source: ideas.length > 0 ? 'gpt' : 'fallback'\n  }\n}];"
+      },
+      "id": "2597e610-bf8c-4170-b53e-b197faef0d78",
+      "name": "Post-GPT Ideas Extractor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare ideas for AI enhancement\nconst ideas = $json.ideas || [];\nconst keyword = $items('Enhanced Content Aggregator')[0]?.json?.keyword || 'topic';\nconst account = $items('Enhanced Content Aggregator')[0]?.json?.account || {};\n\n// Prepare ideas with context for enhancement\nconst ideasForEnhancement = ideas.map(idea => ({\n  ...idea,\n  keyword,\n  account_context: account\n}));\n\nreturn [{\n  json: {\n    ideas: ideasForEnhancement,\n    ideas_count: ideas.length,\n    keyword,\n    account\n  }\n}];"
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Prepare AI Enhancement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a content summarization expert. Generate concise summaries and TL;DR versions of content ideas.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Generate a summary and TL;DR for each of these content ideas:\\n\\n' + JSON.stringify($json.ideas, null, 2) + '\\n\\nReturn JSON with format: {ideas: [{id, summary, tldr}]}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Generate Summaries",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -200,
+        64
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "33X4kPnH6bCSbjcu",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a headline generation expert. Create multiple headline variations: clickbait, neutral, and formal styles.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Generate 3 headline variations (clickbait, neutral, formal) for each idea:\\n\\n' + JSON.stringify($json.ideas, null, 2) + '\\n\\nReturn JSON: {ideas: [{id, headlines: {clickbait, neutral, formal}}]}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Generate Headlines",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -200,
+        144
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "33X4kPnH6bCSbjcu",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a sentiment and stance analysis expert. Analyze the sentiment and political stance of content.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Analyze sentiment and stance for each idea:\\n\\n' + JSON.stringify($json.ideas, null, 2) + '\\n\\nReturn JSON: {ideas: [{id, sentiment: \"positive|neutral|negative\", stance: \"description\", confidence: 0-1}]}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+      "name": "Analyze Sentiment",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -200,
+        224
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "33X4kPnH6bCSbjcu",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a fact-checking assistant. Provide fact-check prompts and verification suggestions for content ideas.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Generate fact-check prompts for each idea:\\n\\n' + JSON.stringify($json.ideas, null, 2) + '\\n\\nReturn JSON: {ideas: [{id, factCheckPrompts: [\"prompt1\", \"prompt2\"], verificationSources: [\"source1\"]}]}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+      "name": "Generate Fact-Check Prompts",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -200,
+        304
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "33X4kPnH6bCSbjcu",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all AI enhancements\nconst baseIdeas = $items('Prepare AI Enhancement')[0]?.json?.ideas || [];\nconst summaries = $items('Generate Summaries')[0]?.json?.ideas || [];\nconst headlines = $items('Generate Headlines')[0]?.json?.ideas || [];\nconst sentiment = $items('Analyze Sentiment')[0]?.json?.ideas || [];\nconst factCheck = $items('Generate Fact-Check Prompts')[0]?.json?.ideas || [];\n\n// Create lookup maps\nconst summariesMap = new Map(summaries.map(s => [s.id, s]));\nconst headlinesMap = new Map(headlines.map(h => [h.id, h]));\nconst sentimentMap = new Map(sentiment.map(s => [s.id, s]));\nconst factCheckMap = new Map(factCheck.map(f => [f.id, f]));\n\n// Merge enhancements into base ideas\nconst enhancedIdeas = baseIdeas.map(idea => {\n  const enhanced = {...idea};\n  \n  if (summariesMap.has(idea.id)) {\n    const s = summariesMap.get(idea.id);\n    enhanced.summary = s.summary;\n    enhanced.tldr = s.tldr;\n  }\n  \n  if (headlinesMap.has(idea.id)) {\n    const h = headlinesMap.get(idea.id);\n    enhanced.headlines = h.headlines;\n  }\n  \n  if (sentimentMap.has(idea.id)) {\n    const s = sentimentMap.get(idea.id);\n    enhanced.sentiment = s.sentiment;\n    enhanced.stance = s.stance;\n    enhanced.sentiment_confidence = s.confidence;\n  }\n  \n  if (factCheckMap.has(idea.id)) {\n    const f = factCheckMap.get(idea.id);\n    enhanced.factCheckPrompts = f.factCheckPrompts;\n    enhanced.verificationSources = f.verificationSources;\n  }\n  \n  return enhanced;\n});\n\nreturn [{\n  json: {\n    ideas: enhancedIdeas,\n    ideas_count: enhancedIdeas.length,\n    enhancement_complete: true\n  }\n}];"
+      },
+      "id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+      "name": "Merge AI Enhancements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "fe5cb63e-9edc-409e-9bcc-063c40180c89",
+              "leftValue": "={{$json.ideas_count}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ce9533cd-d19f-4081-ac85-084a31a967c0",
+      "name": "Should Store Memory?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        200,
+        144
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $items('Memory Integration Bridge')[0].json;\nconst ideas = $items('Post-GPT Ideas Extractor')[0].json.ideas || [];\n\nconsole.log('Preparing Supabase storage for:', {\n  user_id: base.user_id,\n  ideas_count: ideas.length,\n  keyword: base.keyword\n});\n\nconst now = new Date().toISOString();\n\n// Prepare generated_ideas payload - FIXED STRUCTURE\nconst generated_ideas = ideas.map((it, idx) => ({\n  user_id: base.user_id,\n  idea_title: (it.hook || `Idea ${idx + 1}`).substring(0, 255), // Ensure length limit\n  title_hu: it.hook || null,\n  title_en: null,\n  idea_hook: it.hook || null,\n  idea_concept: it.concept || null,\n  political_context: {\n    format: it.format || 'Standard',\n    beats: it.beats || [],\n    safetyNotes: it.safetyNotes || [],\n    onScreenText: it.onScreenText || [],\n    stitchOrDuet: it.stitchOrDuet || 'Standalone'\n  },\n  trending_score: 50,\n  concepts: (it.onScreenText || []).slice(0, 6),\n  content_fingerprint: {\n    keyword: base.keyword,\n    topTags: base.topTags || [],\n    organization_type: base.organization_type,\n    region: base.region\n  },\n  combined_fingerprint: base.combined_fingerprint,\n  region: base.region || 'HU',\n  request_fingerprint: base.request_fingerprint,\n  target_audience: base.account?.targetAudience || null,\n  created_at: now\n}));\n\n// Prepare theme_coverage payload - FIXED STRUCTURE\nconst themeSet = new Set();\n\n// Extract themes from topTags\n(base.topTags || []).forEach(t => {\n  if (t.tag) {\n    const cleanTag = String(t.tag).toLowerCase().trim();\n    if (cleanTag) themeSet.add(cleanTag);\n  }\n});\n\n// Extract themes from idea hooks\nideas.forEach(it => {\n  const hook = it.hook || '';\n  // Split hook into words and extract meaningful terms\n  hook.toLowerCase()\n    .split(/[^a-záéíóöőúüű0-9#]+/i)\n    .forEach(w => {\n      if (w && w.length > 3) {\n        themeSet.add(w);\n      }\n    });\n});\n\nconst theme_coverage = Array.from(themeSet)\n  .slice(0, 30)\n  .map(t => ({\n    user_id: base.user_id,\n    theme: t.startsWith('#') ? t : ('#' + t),\n    usage_count: 1,\n    last_used: now,\n    region: base.region || 'HU'\n  }));\n\n// Prepare request_history payload - FIXED STRUCTURE\nconst request_history = [{\n  user_id: base.user_id,\n  request_fingerprint: base.request_fingerprint,\n  concepts_requested: base.topics || [],\n  ideas_generated: ideas.length,\n  memory_recommendation: theme_coverage.slice(0, 5).map(x => x.theme).join(', '),\n  generated_at: now,\n  region: base.region || 'HU',\n  keyword: base.keyword || 'unknown'\n}];\n\n// Validation\nif (generated_ideas.length === 0) {\n  console.warn('No ideas to store');\n}\n\nif (theme_coverage.length === 0) {\n  console.warn('No themes to store');\n}\n\nconsole.log('Supabase payloads prepared:', {\n  generated_ideas_count: generated_ideas.length,\n  theme_coverage_count: theme_coverage.length,\n  request_history_count: request_history.length\n});\n\n// Debug: Log sample data\nif (generated_ideas.length > 0) {\n  console.log('Sample generated_idea:', JSON.stringify(generated_ideas[0], null, 2));\n}\n\nif (theme_coverage.length > 0) {\n  console.log('Sample theme_coverage:', JSON.stringify(theme_coverage[0], null, 2));\n}\n\nconsole.log('Request history:', JSON.stringify(request_history[0], null, 2));\n\nreturn [{\n  json: {\n    generated_ideas,\n    theme_coverage, \n    request_history,\n    \n    // Metadata for debugging\n    payloads_ready: true,\n    user_id: base.user_id,\n    keyword: base.keyword,\n    region: base.region,\n    timestamp: now\n  }\n}];\n\n// ===== 6. IMPROVED \"Merge memory\" NODE =====\n// Replace your existing \"Merge memory\" node with this enhanced version:\n\nconsole.log('🔄 Storage Merge: Processing Supabase operation results...');\n\nconst allInputs = $input.all();\nconsole.log(`📊 Received ${allInputs.length} storage operation results`);\n\n// Track storage results\nlet storageResults = {\n  ideas_stored: false,\n  themes_stored: false,\n  request_history_stored: false,\n  storage_errors: [],\n  http_responses: []\n};\n\n// Original data for PDF generation\nlet originalData = {};\n\n// Process each input\nfor (let i = 0; i < allInputs.length; i++) {\n  const input = allInputs[i];\n  const data = input.json || {};\n  \n  console.log(`Processing input ${i + 1}:`, Object.keys(data));\n  \n  // Check if this is original data (has payloads_ready flag)\n  if (data.payloads_ready) {\n    console.log('✅ Found original data');\n    originalData = data;\n    continue;\n  }\n  \n  // Check for HTTP response data\n  storageResults.http_responses.push({\n    index: i,\n    has_error: !!data.error,\n    status: data.status || 'unknown',\n    message: data.message || data.error || 'success'\n  });\n  \n  // Determine success (no error = success)\n  const isSuccess = !data.error && !data.message?.includes('error');\n  \n  if (isSuccess) {\n    // Try to determine which operation this was based on URL or other indicators\n    // This is a simple heuristic - you might need to adjust based on your actual setup\n    if (i === 0) storageResults.ideas_stored = true;\n    else if (i === 1) storageResults.themes_stored = true;\n    else if (i === 2) storageResults.request_history_stored = true;\n    \n    console.log(`✅ Storage operation ${i + 1} succeeded`);\n  } else {\n    console.log(`❌ Storage operation ${i + 1} failed:`, data.error || data.message);\n    storageResults.storage_errors.push({\n      operation: `storage_${i + 1}`,\n      error: data.error || data.message || 'Unknown error',\n      timestamp: new Date().toISOString()\n    });\n  }\n}\n\n// Calculate overall success\nconst totalOps = 3;\nconst successCount = [\n  storageResults.ideas_stored,\n  storageResults.themes_stored,\n  storageResults.request_history_stored\n].filter(Boolean).length;\n\nconst overallSuccess = successCount > 0; // At least one operation succeeded\n\nconsole.log(`📈 Storage Summary: ${successCount}/${totalOps} operations completed`);\nconsole.log('🎯 Overall success:', overallSuccess);\n\n// Ensure we have required data for PDF generation\nif (!originalData.keyword) {\n  console.error('❌ Missing original data for PDF generation');\n  // Try to extract from any available input\n  for (const input of allInputs) {\n    if (input.json.keyword) {\n      originalData = input.json;\n      break;\n    }\n  }\n}\n\n// Build final response\nconst finalData = {\n  // Core data for PDF generation\n  keyword: originalData.keyword || 'unknown',\n  email: originalData.email || 'test@example.com',\n  organization_type: originalData.organization_type || 'organization',\n  region: originalData.region || 'HU',\n  topics: originalData.topics || [],\n  user_id: originalData.user_id || 'unknown',\n  \n  // Storage metadata\n  storage_completed: overallSuccess,\n  storage_operations_total: totalOps,\n  storage_operations_completed: successCount,\n  storage_operations_failed: storageResults.storage_errors.length,\n  storage_timestamp: new Date().toISOString(),\n  \n  // Storage results detail\n  storage_results: {\n    ideas_stored: storageResults.ideas_stored,\n    themes_stored: storageResults.themes_stored,\n    request_history_stored: storageResults.request_history_stored,\n    errors: storageResults.storage_errors,\n    http_responses: storageResults.http_responses\n  },\n  \n  // Flag for PDF generation\n  processed_with_storage: true,\n  supabase_integration_attempted: true\n};\n\nconsole.log('✅ Storage merge completed');\nconsole.log('📄 Proceeding to PDF generation');\n\nreturn [{\n  json: finalData\n}];"
+      },
+      "id": "737b0a3f-e94b-43bc-8177-5a49bda1aba8",
+      "name": "Prepare Memory Storage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/generated_ideas",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.generated_ideas}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "8a49934d-1b9b-4d49-b05f-fd2939cb5ce3",
+      "name": "Store Ideas in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/theme_coverage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.theme_coverage}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "61af4eca-4a44-4160-a12d-4bc462878f3e",
+      "name": "Store Themes in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        352,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/request_history",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.request_history}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "4da8b7af-e3a2-4cfe-8692-cd01c0e5dd61",
+      "name": "Store Request History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        592,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build HTML - Enhanced with better error handling\nconsole.log('🎨 Building HTML from extracted ideas...');\n\n// Get ideas from Post-GPT Ideas Extractor\nconst ideasData = $items('Post-GPT Ideas Extractor')[0]?.json || {};\nconst ideas = ideasData.ideas || [];\n\nconsole.log(`📄 Building HTML for ${ideas.length} ideas`);\nconsole.log(`🔧 Extraction source: ${ideasData.extraction_source || 'unknown'}`);\n\n// Get keyword from Enhanced Content Aggregator\nconst keyword = $items('Enhanced Content Aggregator')[0]?.json?.keyword || 'Magyar Politikai Tartalom';\n\n// Helper function for HTML escaping\nconst esc = s => String(s || '').replace(/[&<>\"']/g, m => ({\n  \"&\": \"&amp;\",\n  \"<\": \"&lt;\", \n  \">\": \"&gt;\",\n  '\"': \"&quot;\",\n  \"'\": \"&#39;\"\n}[m]));\n\n// Build body content\nlet body = '';\n\nif (ideas.length === 0) {\n  body = `\n    <div class=\"no-ideas\">\n      <h3>🤖 AI Folyamatban...</h3>\n      <p>A tartalom generálás folyamatban van. Kérjük, várjon egy pillanatot.</p>\n      <div class=\"progress-indicator\">\n        <div class=\"spinner\"></div>\n        <p>Ötletek feldolgozása...</p>\n      </div>\n    </div>\n  `;\n} else {\n  body = ideas.map((x, i) => {\n    // Safely extract data with fallbacks\n    const beats = Array.isArray(x.beats) ? \n      x.beats.map(b => `<li>${esc(b)}</li>`).join('') : '';\n    \n    const onScreenText = Array.isArray(x.onScreenText) ? \n      x.onScreenText.map(esc).join(' • ') : '';\n    \n    const safetyNotes = Array.isArray(x.safetyNotes) ? \n      x.safetyNotes.map(esc).join(' • ') : '';\n    \n    const sourcePrompts = Array.isArray(x.sourcePrompts) ? \n      x.sourcePrompts.map(esc).join(' • ') : '';\n    \n    const cta = x.CTA || x.cta || '';\n    const hook = x.hook || `Ötlet #${i + 1}`;\n    const concept = x.concept || '';\n    const format = x.format || 'Standard';\n\n    return `\n      <div class=\"idea\">\n        <div class=\"head\">\n          <span class=\"idx\">${i + 1}.</span>\n          <span class=\"hook\">${esc(hook)}</span>\n          <span class=\"badge\">${esc(format)}</span>\n        </div>\n        ${concept ? `<div class=\"concept\">${esc(concept)}</div>` : ''}\n        ${beats ? `<ul class=\"beats\">${beats}</ul>` : ''}\n        ${onScreenText ? `<div class=\"meta\"><b>Képernyőn:</b> ${onScreenText}</div>` : ''}\n        ${cta || x.stitchOrDuet ? `<div class=\"meta\">\n          <b>CTA:</b> ${esc(cta)} \n          ${x.stitchOrDuet ? `&nbsp;<b>Stitch/Duet:</b> ${esc(x.stitchOrDuet)}` : ''}\n        </div>` : ''}\n        ${safetyNotes ? `<div class=\"safety\"><b>Biztonság:</b> ${safetyNotes}</div>` : ''}\n        ${sourcePrompts ? `<div class=\"sources\"><b>Források:</b> ${sourcePrompts}</div>` : ''}\n      </div>\n    `;\n  }).join('\\n');\n}\n\n// Generate complete HTML\nconst html = `<!doctype html>\n<html>\n<head>\n  <meta charset=\"utf-8\"/>\n  <title>TikTok Tartalom Ötletek - ${esc(keyword)}</title>\n  <style>\n    body {\n      font-family: Inter, Arial, sans-serif;\n      margin: 24px;\n      color: #111;\n      background: #fafafa;\n      line-height: 1.6;\n    }\n    h1 {\n      font-size: 26px;\n      margin: 0 0 6px;\n      color: #2d3748;\n    }\n    .meta-top {\n      color: #666;\n      font-size: 12px;\n      margin: 0 0 16px;\n    }\n    .idea {\n      background: #fff;\n      border: 1px solid #e2e8f0;\n      border-radius: 12px;\n      padding: 16px;\n      margin: 16px 0;\n      box-shadow: 0 2px 4px rgba(0,0,0,.05);\n    }\n    .head {\n      display: flex;\n      gap: 8px;\n      align-items: center;\n      margin-bottom: 8px;\n    }\n    .idx {\n      font-weight: 600;\n      color: #667eea;\n      min-width: 24px;\n    }\n    .hook {\n      font-weight: 600;\n      font-size: 16px;\n      flex: 1;\n    }\n    .badge {\n      font-size: 11px;\n      background: #667eea;\n      color: white;\n      border-radius: 12px;\n      padding: 3px 8px;\n    }\n    .concept {\n      color: #4a5568;\n      margin: 8px 0;\n      font-style: italic;\n    }\n    .beats {\n      margin: 8px 0 8px 24px;\n      color: #2d3748;\n    }\n    .beats li {\n      margin: 4px 0;\n    }\n    .meta, .safety, .sources {\n      color: #718096;\n      font-size: 13px;\n      margin: 6px 0;\n      padding: 4px 0;\n    }\n    .safety {\n      background: #f0fff4;\n      border-left: 3px solid #38a169;\n      padding: 6px 12px;\n      border-radius: 4px;\n    }\n    .sources {\n      background: #fffaf0;\n      border-left: 3px solid #ed8936;\n      padding: 6px 12px;\n      border-radius: 4px;\n    }\n    .no-ideas {\n      text-align: center;\n      padding: 40px;\n      background: white;\n      border-radius: 12px;\n      border: 1px solid #e2e8f0;\n    }\n    .progress-indicator {\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      gap: 12px;\n      margin-top: 20px;\n    }\n    .spinner {\n      width: 24px;\n      height: 24px;\n      border: 3px solid #e2e8f0;\n      border-top: 3px solid #667eea;\n      border-radius: 50%;\n      animation: spin 1s linear infinite;\n    }\n    @keyframes spin {\n      0% { transform: rotate(0deg); }\n      100% { transform: rotate(360deg); }\n    }\n  </style>\n</head>\n<body>\n  <h1>🎯 TikTok Tartalom Ötletek — ${esc(keyword)}</h1>\n  <div class=\"meta-top\">\n    Generálva: ${new Date().toLocaleString('hu-HU')} | \n    Ötletek száma: ${ideas.length} |\n    Forrás: ${ideasData.extraction_source === 'gpt' ? '🤖 AI' : '⚡ Tartalék'}\n  </div>\n  ${body}\n  <div style=\"margin-top: 32px; padding: 16px; background: #f7fafc; border-radius: 8px; font-size: 12px; color: #718096;\">\n    <strong>Magyar Politikai TikTok Generátor</strong> - \n    Memória-alapú duplikátum védelem | \n    Trending elemzés | \n    Lokális kontextus\n  </div>\n</body>\n</html>`;\n\nconsole.log('✅ HTML generated successfully');\n\nreturn [{ json: { html } }];"
+      },
+      "id": "43f1149e-8028-4d91-bd8d-3b9dc7333271",
+      "name": "Build HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pdfshift.io/v3/convert/pdf",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"source\": {{ JSON.stringify($json.html) }}, \"format\": \"A4\" }",
+        "options": {}
+      },
+      "id": "2a14df17-2eda-40c9-b558-cb9331fc2a69",
+      "name": "HTTP Request (PDF)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        320
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "791iyYeaHEVi25X9",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const k = $items('Enhanced Content Aggregator')[0].json.keyword || 'topic';\nconst email = $items('Enhanced Content Aggregator')[0].json.email || 'test@example.com';\nconst today = new Date().toISOString().slice(0,10);\nreturn [{json:{ subject:`Weekly TikTok report – ${k} – ${today}`, bodyHtml:`<!doctype html><html><body style=\\\"font-family:Arial,Helvetica,sans-serif;line-height:1.45;color:#111\\\"><p>Hi,</p><p>Attached is the TikTok report for <strong>${k}</strong>.</p><p>— intercept</p><hr/><p style=\\\"font-size:12px;color:#666\\\">Sent automatically by n8n.</p></body></html>`, to: email }}];"
+      },
+      "id": "afd0ada3-19dd-4f79-8c97-aec051822b97",
+      "name": "Prepare email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge PDF (from \"HTTP Request (PDF)\") with email meta (from \"Prepare email\")\n// n8n v1.108.2 compatible\n\nconst pdfItem  = $items('HTTP Request (PDF)')[0];   // binary result.pdf here\nconst metaItem = $items('Prepare email')[0];        // subject/bodyHtml/to here\n\nif (!pdfItem)  throw new Error(\"Missing item from 'HTTP Request (PDF)'.\");\nif (!metaItem) throw new Error(\"Missing item from 'Prepare email'.\");\n\n// Ensure we expose the PDF under the 'data' key for Gmail\nconst binKeys = Object.keys(pdfItem.binary || {});\nif (!binKeys.length) throw new Error(\"PDF item has no binary.\");\nconst pdfBin = pdfItem.binary[binKeys[0]]; // e.g. 'data' or 'result'\n\nreturn [{\n  json: {\n    subject:  metaItem.json.subject,\n    bodyHtml: metaItem.json.bodyHtml,\n    to:       metaItem.json.to,\n  },\n  binary: { data: pdfBin }, // <-- normalize to 'data'\n}];\n"
+      },
+      "id": "a9006a04-f674-4ced-b18e-e3e79c2f29b6",
+      "name": "Merge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "message": "={{$json.bodyHtml}}",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          }
+        }
+      },
+      "id": "eb36b118-363f-448f-a6fe-778251878532",
+      "name": "Send a mail message with PDF",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        320
+      ],
+      "webhookId": "b1ee0cc4-1307-461d-b323-133b74295b95",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "kLe5imeC0IDpzGtJ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Duplicate branch response\nconst base = $items('Memory Analysis')[0].json;\nreturn [{json:{ ok:true, duplicate_content_detected:true, user_id: base.user_id, keyword: base.keyword, region: base.region }}];"
+      },
+      "id": "6d86ee31-7951-4d97-98b9-5c373fb518cb",
+      "name": "Duplicate Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2400,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"duplicate_content_detected\": false, \"user_id\": \"{{$items('Content Request Processor')[0].json.user_id}}\", \"keyword\": \"{{$items('Content Request Processor')[0].json.keyword}}\", \"region\": \"{{$items('Content Request Processor')[0].json.region}}\", \"email\": \"{{$items('Enhanced Content Aggregator')[0].json.email || ''}}\", \"pdf_email_sent\": true, \"timestamp\": \"{{$now}}\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "6f8545f4-a85b-46d1-9720-5094b77814db",
+      "name": "Respond to Webhook (success)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        480,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "1a4cf39d-4891-439a-bb3c-b04f85244da3",
+      "name": "Respond to Webhook (duplicate)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2160,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Option 1: Replace TikTok Profile Node with Code Node (Fallback)\n// Create a new Code node to replace the failing Apify node\n\nconst inputData = $json;\n\n// Check if we have a TikTok username\nconst tiktokUsername = inputData.tiktok_username;\n\nlet profileData = {};\n\nif (tiktokUsername) {\n  console.log(`TikTok username provided: ${tiktokUsername}`);\n  \n  // Create mock profile data since Apify is failing\n  // TODO: Replace this with working TikTok API when Apify is fixed\n  profileData = {\n    username: tiktokUsername,\n    followerCount: \"N/A (service unavailable)\",\n    videoCount: \"N/A\",\n    profileDescription: \"TikTok profile analysis temporarily unavailable\",\n    recentVideos: [],\n    engagement: \"N/A\",\n    topHashtags: inputData.topics || [],\n    profileAnalysisAvailable: false,\n    profileAnalysisMessage: \"TikTok profile scraping temporarily unavailable due to API limits\"\n  };\n} else {\n  console.log('No TikTok username provided');\n  profileData = {\n    profileAnalysisAvailable: false,\n    profileAnalysisMessage: \"No TikTok username provided\"\n  };\n}\n\n// Pass through all original data plus profile data\nreturn [{\n  json: {\n    ...inputData,\n    tiktokProfile: profileData,\n    hasProfileData: Boolean(tiktokUsername)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1920,
+        -160
+      ],
+      "id": "625232a1-7055-44f7-99ae-a027ae95d5c5",
+      "name": "TikTok profile code alternative"
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIXED \"Merge memory\" Node - Replace your existing one with this\nconsole.log('🔄 Storage Merge: Starting...');\n\nconst allInputs = $input.all();\nconsole.log(`📊 Received ${allInputs.length} inputs`);\n\n// Log all inputs for debugging\nallInputs.forEach((input, index) => {\n  console.log(`Input ${index + 1}:`, Object.keys(input.json || {}));\n  if (input.json?.keyword) {\n    console.log(`  - Has keyword: ${input.json.keyword}`);\n  }\n  if (input.json?.email) {\n    console.log(`  - Has email: ${input.json.email}`);\n  }\n});\n\n// Find original data - try multiple strategies\nlet originalData = {};\n\n// Strategy 1: Look for data with keyword and email\nconst dataWithCore = allInputs.find(input => \n  input.json?.keyword && (input.json?.email || input.json?.to)\n);\n\nif (dataWithCore) {\n  originalData = dataWithCore.json;\n  console.log('✅ Found original data with keyword and email');\n} else {\n  // Strategy 2: Look for data from specific nodes\n  console.log('⚠️ No complete data found, trying to reconstruct...');\n  \n  // Try to get data from earlier nodes using $items()\n  try {\n    const aggregatorData = $items('Enhanced Content Aggregator')[0]?.json;\n    if (aggregatorData?.keyword) {\n      console.log('✅ Found data from Enhanced Content Aggregator');\n      originalData = {\n        keyword: aggregatorData.keyword,\n        email: aggregatorData.email || 'test@example.com',\n        organization_type: aggregatorData.organization_type || 'organization',\n        region: aggregatorData.region || 'HU',\n        topics: aggregatorData.topics || [],\n        user_id: aggregatorData.user_id || 'unknown'\n      };\n    }\n  } catch (e) {\n    console.log('❌ Could not access Enhanced Content Aggregator');\n  }\n  \n  // Strategy 3: Try Memory Integration Bridge\n  if (!originalData.keyword) {\n    try {\n      const bridgeData = $items('Memory Integration Bridge')[0]?.json;\n      if (bridgeData?.keyword) {\n        console.log('✅ Found data from Memory Integration Bridge');\n        originalData = {\n          keyword: bridgeData.keyword,\n          email: bridgeData.email || 'test@example.com',\n          organization_type: bridgeData.organization_type || 'organization',\n          region: bridgeData.region || 'HU',\n          topics: bridgeData.topics || [],\n          user_id: bridgeData.user_id || 'unknown'\n        };\n      }\n    } catch (e) {\n      console.log('❌ Could not access Memory Integration Bridge');\n    }\n  }\n  \n  // Strategy 4: Look in any input that has these fields\n  if (!originalData.keyword) {\n    for (const input of allInputs) {\n      const data = input.json || {};\n      if (data.keyword || data.user_id) {\n        originalData = {\n          keyword: data.keyword || 'unknown',\n          email: data.email || data.to || 'test@example.com',\n          organization_type: data.organization_type || 'organization',\n          region: data.region || 'HU',\n          topics: data.topics || [],\n          user_id: data.user_id || 'unknown'\n        };\n        console.log('✅ Reconstructed data from available inputs');\n        break;\n      }\n    }\n  }\n}\n\n// Final fallback\nif (!originalData.keyword) {\n  console.log('⚠️ Using fallback data');\n  originalData = {\n    keyword: 'magyar politika',\n    email: 'test@example.com',\n    organization_type: 'organization',\n    region: 'HU',\n    topics: ['#politika'],\n    user_id: 'demo-user'\n  };\n}\n\n// Process storage results\nlet storageResults = {\n  ideas_stored: false,\n  themes_stored: false,\n  request_history_stored: false,\n  storage_errors: [],\n  executed_count: 0\n};\n\n// Count successful operations\nallInputs.forEach((input, index) => {\n  const data = input.json || {};\n  \n  // Skip if this is the original data (has payloads_ready flag)\n  if (data.payloads_ready) {\n    return;\n  }\n  \n  storageResults.executed_count++;\n  \n  // Check for errors\n  const hasError = !!(data.error || data.message?.includes('error'));\n  \n  if (!hasError) {\n    // Assume success if no error\n    if (index === 0 || data.storage_type === 'ideas') {\n      storageResults.ideas_stored = true;\n    } else if (index === 1 || data.storage_type === 'themes') {\n      storageResults.themes_stored = true;\n    } else if (index === 2 || data.storage_type === 'history') {\n      storageResults.request_history_stored = true;\n    }\n    console.log(`✅ Storage operation ${index + 1} succeeded`);\n  } else {\n    console.log(`❌ Storage operation ${index + 1} failed:`, data.error || data.message);\n    storageResults.storage_errors.push({\n      operation: `storage_${index + 1}`,\n      error: data.error || data.message || 'Unknown error'\n    });\n  }\n});\n\nconst successCount = [\n  storageResults.ideas_stored,\n  storageResults.themes_stored,\n  storageResults.request_history_stored\n].filter(Boolean).length;\n\nconsole.log(`📈 Storage Summary: ${successCount}/3 operations completed`);\nconsole.log(`🔄 Executed operations: ${storageResults.executed_count}`);\n\n// Build final response for PDF generation\nconst finalData = {\n  // REQUIRED fields for PDF generation\n  keyword: originalData.keyword,\n  email: originalData.email,\n  \n  // Additional fields\n  organization_type: originalData.organization_type,\n  region: originalData.region,\n  topics: originalData.topics,\n  user_id: originalData.user_id,\n  \n  // Storage metadata\n  storage_completed: successCount > 0,\n  storage_operations_total: 3,\n  storage_operations_completed: successCount,\n  storage_operations_executed: storageResults.executed_count,\n  storage_timestamp: new Date().toISOString(),\n  \n  // Debug info\n  storage_debug: {\n    ideas_stored: storageResults.ideas_stored,\n    themes_stored: storageResults.themes_stored,\n    request_history_stored: storageResults.request_history_stored,\n    errors: storageResults.storage_errors,\n    inputs_received: allInputs.length\n  },\n  \n  // Required flags\n  processed_with_storage: true\n};\n\nconsole.log('✅ Final data prepared:', {\n  keyword: finalData.keyword,\n  email: finalData.email,\n  storage_operations: finalData.storage_operations_executed\n});\n\nreturn [{\n  json: finalData\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        -192
+      ],
+      "id": "959a488f-7798-4a84-85ca-ed68b7511b9f",
+      "name": "Merge memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "async function upsertAllData() {\n  const { generated_ideas, theme_coverage, request_history } = $json;\n  \n  const results = {\n    ideas: { success: false, error: null },\n    themes: { success: false, error: null },\n    history: { success: false, error: null }\n  };\n\n  // Use n8n's built-in HTTP helper instead of fetch\n  const headers = {\n    'apikey': $vars.SUPABASE_ANON_KEY,\n    'Authorization': `Bearer ${$vars.SUPABASE_ANON_KEY}`,\n    'Content-Type': 'application/json',\n    'Prefer': 'resolution=merge-duplicates'\n  };\n\n  // Store Ideas\n  if (generated_ideas && generated_ideas.length > 0) {\n    try {\n      const response = await $http.request({\n        method: 'POST',\n        url: `${$vars.SUPABASE_URL}/rest/v1/generated_ideas`,\n        headers,\n        body: generated_ideas\n      });\n      results.ideas.success = true;\n    } catch (error) {\n      results.ideas.error = error.message;\n    }\n  }\n\n  // Store Themes  \n  if (theme_coverage && theme_coverage.length > 0) {\n    try {\n      await $http.request({\n        method: 'POST',\n        url: `${$vars.SUPABASE_URL}/rest/v1/theme_coverage`,\n        headers,\n        body: theme_coverage\n      });\n      results.themes.success = true;\n    } catch (error) {\n      results.themes.error = error.message;\n    }\n  }\n\n  // Store Request History\n  if (request_history && request_history.length > 0) {\n    try {\n      await $http.request({\n        method: 'POST', \n        url: `${$vars.SUPABASE_URL}/rest/v1/request_history`,\n        headers,\n        body: request_history\n      });\n      results.history.success = true;\n    } catch (error) {\n      results.history.error = error.message;\n    }\n  }\n\n  return results;\n}\n\nconst supabaseResults = await upsertAllData();\n\nreturn [{\n  json: {\n    ...$json,\n    supabase_operations: supabaseResults,\n    storage_completed: Object.values(supabaseResults).some(r => r.success),\n    all_operations_successful: Object.values(supabaseResults).every(r => r.success),\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        -384
+      ],
+      "id": "2a091539-2256-4c73-a1e1-4ced2e20542c",
+      "name": "Super Supabase"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Content Generation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Content Request Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Request Processor": {
+      "main": [
+        [
+          {
+            "node": "Load User Preferences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load User Preferences": {
+      "main": [
+        [
+          {
+            "node": "Merge User Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge User Data": {
+      "main": [
+        [
+          {
+            "node": "Memory Check Init",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Check Init": {
+      "main": [
+        [
+          {
+            "node": "Load Previous Ideas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Theme Coverage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Previous Ideas": {
+      "main": [
+        [
+          {
+            "node": "Memory Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Theme Coverage": {
+      "main": [
+        [
+          {
+            "node": "Memory Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Analysis": {
+      "main": [
+        [
+          {
+            "node": "Should Generate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Generate?": {
+      "main": [
+        [
+          {
+            "node": "Enhanced Prompt Builder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Duplicate Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (duplicate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enhanced Prompt Builder": {
+      "main": [
+        [
+          {
+            "node": "Memory Integration Bridge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Integration Bridge": {
+      "main": [
+        [
+          {
+            "node": "Apify node",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TikTok profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TikTok profile": {
+      "main": [
+        [
+          {
+            "node": "Get Apify Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Apify Results": {
+      "main": [
+        [
+          {
+            "node": "Process tiktok user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify node": {
+      "main": [
+        [
+          {
+            "node": "Get pol. posts results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get pol. posts results": {
+      "main": [
+        [
+          {
+            "node": "Process results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process tiktok user": {
+      "main": [
+        [
+          {
+            "node": "Enhanced Content Aggregator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process results": {
+      "main": [
+        [
+          {
+            "node": "Enhanced Content Aggregator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enhanced Content Aggregator": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Post-GPT Ideas Extractor",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-GPT Ideas Extractor": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Enhancement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Enhancement": {
+      "main": [
+        [
+          {
+            "node": "Generate Summaries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Headlines",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Analyze Sentiment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Fact-Check Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summaries": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Headlines": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Sentiment": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Fact-Check Prompts": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AI Enhancements": {
+      "main": [
+        [
+          {
+            "node": "Translate Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Should Store Memory?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate Content": {
+      "main": [
+        [
+          {
+            "node": "Should Store Memory?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Memory Storage": {
+      "main": [
+        [
+          {
+            "node": "Super Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build HTML": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request (PDF)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request (PDF)": {
+      "main": [
+        [
+          {
+            "node": "Prepare email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare email": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Send a mail message with PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a mail message with PDF": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TikTok profile code alternative": {
+      "main": [
+        []
+      ]
+    },
+    "Store Themes in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Store Request History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Request History": {
+      "main": [
+        []
+      ]
+    },
+    "Store Ideas in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Store Themes in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Store Memory?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Memory Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Super Supabase": {
+      "main": [
+        [
+          {
+            "node": "Merge memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f5c0c58f-862c-4ef4-bdc4-dc4e33b25fac",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "eda3178c1cdce11ec7300fb755d92dee8a8b4a216d9d8fa484b8d92ef79725b6"
+  },
+  "id": "JUpFwyUcnT68lpKK",
+  "tags": []
+}

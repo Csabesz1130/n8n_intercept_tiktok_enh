@@ -1,0 +1,257 @@
+{
+  "name": "Content Enhancement",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {ideas: [...]}\n// Output: Enhanced ideas with summaries, headlines, sentiment, fact-check\n\nconst ideas = $json.ideas || [];\n\n// Prepare ideas for parallel enhancement\nreturn ideas.map(idea => ({\n  json: {\n    idea,\n    ideas: [idea]\n  }\n}));"
+      },
+      "id": "split-ideas",
+      "name": "Split Ideas for Processing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a content summarization expert. Generate concise summaries and TL;DR versions.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Generate summary and TL;DR for: ' + JSON.stringify($json.idea, null, 2) + '\\n\\nReturn JSON: {id, summary, tldr}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "gen-summary",
+      "name": "Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [450, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a headline generation expert. Create clickbait, neutral, and formal headline variations.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Generate 3 headline variations for: ' + JSON.stringify($json.idea, null, 2) + '\\n\\nReturn JSON: {id, headlines: {clickbait, neutral, formal}}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "gen-headlines",
+      "name": "Generate Headlines",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [450, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a sentiment analysis expert. Analyze sentiment and political stance.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Analyze sentiment for: ' + JSON.stringify($json.idea, null, 2) + '\\n\\nReturn JSON: {id, sentiment: \"positive|neutral|negative\", stance: \"description\", confidence: 0-1}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "analyze-sentiment",
+      "name": "Analyze Sentiment",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [450, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a fact-checking assistant. Provide fact-check prompts and verification suggestions.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Generate fact-check prompts for: ' + JSON.stringify($json.idea, null, 2) + '\\n\\nReturn JSON: {id, factCheckPrompts: [\"prompt1\"], verificationSources: [\"source1\"]}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "gen-factcheck",
+      "name": "Generate Fact-Check",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [450, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all enhancements\nconst allInputs = $input.all();\nconst baseIdeas = $items('Split Ideas for Processing')[0]?.json?.ideas || [];\n\nconst enhancements = {\n  summaries: new Map(),\n  headlines: new Map(),\n  sentiment: new Map(),\n  factCheck: new Map()\n};\n\n// Collect enhancements\nfor (const input of allInputs) {\n  const data = input.json;\n  if (data.id) {\n    if (data.summary) enhancements.summaries.set(data.id, data);\n    if (data.headlines) enhancements.headlines.set(data.id, data);\n    if (data.sentiment) enhancements.sentiment.set(data.id, data);\n    if (data.factCheckPrompts) enhancements.factCheck.set(data.id, data);\n  }\n}\n\n// Merge into base ideas\nconst enhancedIdeas = baseIdeas.map(idea => {\n  const enhanced = {...idea};\n  const id = idea.id;\n  \n  if (enhancements.summaries.has(id)) {\n    const s = enhancements.summaries.get(id);\n    enhanced.summary = s.summary;\n    enhanced.tldr = s.tldr;\n  }\n  \n  if (enhancements.headlines.has(id)) {\n    enhanced.headlines = enhancements.headlines.get(id).headlines;\n  }\n  \n  if (enhancements.sentiment.has(id)) {\n    const s = enhancements.sentiment.get(id);\n    enhanced.sentiment = s.sentiment;\n    enhanced.stance = s.stance;\n    enhanced.sentiment_confidence = s.confidence;\n  }\n  \n  if (enhancements.factCheck.has(id)) {\n    const f = enhancements.factCheck.get(id);\n    enhanced.factCheckPrompts = f.factCheckPrompts;\n    enhanced.verificationSources = f.verificationSources;\n  }\n  \n  return enhanced;\n});\n\nreturn [{\n  json: {\n    ideas: enhancedIdeas,\n    ideas_count: enhancedIdeas.length,\n    enhancement_complete: true\n  }\n}];"
+      },
+      "id": "merge-enhancements",
+      "name": "Merge Enhancements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Content Enhancement\", description: \"Enhances content ideas with summaries, headlines, sentiment analysis, and fact-check prompts\", input: {ideas: \"Array of content ideas\"}, output: {ideas: \"Enhanced ideas array\", enhancement_complete: \"Boolean\"}, required_credentials: [\"OpenAI API\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Split Ideas for Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Ideas for Processing": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Headlines",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Analyze Sentiment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Fact-Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Merge Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Headlines": {
+      "main": [
+        [
+          {
+            "node": "Merge Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Sentiment": {
+      "main": [
+        [
+          {
+            "node": "Merge Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Fact-Check": {
+      "main": [
+        [
+          {
+            "node": "Merge Enhancements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

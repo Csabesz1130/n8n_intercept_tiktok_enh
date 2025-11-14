@@ -1,0 +1,220 @@
+{
+  "name": "Trending Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/40 * * * *",
+        "triggerAtStartup": false
+      },
+      "id": "cron-trigger",
+      "name": "Every 40 Minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize engine run\nreturn [{json: {\n  engine_id: `engine-${Date.now()}`,\n  started_at: new Date().toISOString()\n}}];"
+      },
+      "id": "init-engine",
+      "name": "Initialize Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/source_raw?select=*&collected_at=gte.{{new Date(Date.now() - 2*60*60*1000).toISOString()}}&order=collected_at.desc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "load-normalized",
+      "name": "Load Normalized Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-normaliser",
+      "name": "Call Normaliser",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rank topics and keep top 100 per region/category\nconst normalizedData = $input.all();\nconst base = $items('Initialize Engine')[0]?.json || {};\n\n// Group by category and region\nconst grouped = {};\n\nfor (const item of normalizedData) {\n  if (!item.json.ready_for_engine) continue;\n  \n  const category = item.json.category || 'other';\n  const region = item.json.region || 'global';\n  const key = `${category}:${region}`;\n  \n  if (!grouped[key]) {\n    grouped[key] = [];\n  }\n  \n  grouped[key].push({\n    topic: item.json.topic,\n    normalized_topic: item.json.normalized_topic,\n    category,\n    region,\n    score: item.json.score || 0,\n    velocity: item.json.velocity || 0,\n    popularity: item.json.popularity || 0,\n    source_count: item.json.source_count || 1,\n    sources: item.json.sources || [],\n    metadata: item.json.metadata || {}\n  });\n}\n\n// Sort and limit to top 100 per group\nconst rankedTopics = [];\n\nfor (const [key, topics] of Object.entries(grouped)) {\n  const sorted = topics\n    .sort((a, b) => {\n      // Primary: score\n      if (b.score !== a.score) return b.score - a.score;\n      // Secondary: velocity\n      if (b.velocity !== a.velocity) return b.velocity - a.velocity;\n      // Tertiary: source_count\n      return b.source_count - a.source_count;\n    })\n    .slice(0, 100);\n  \n  rankedTopics.push(...sorted);\n}\n\nreturn rankedTopics.map(t => ({json: {...base, ...t, ready_to_store: true}}));"
+      },
+      "id": "rank-topics",
+      "name": "Rank Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/upsert_trending_topic",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {p_topic: $json.topic, p_normalized_topic: $json.normalized_topic, p_category: $json.category, p_region: $json.region, p_score: $json.score, p_velocity: $json.velocity, p_popularity: $json.popularity, p_source: $json.sources[0] || 'unknown', p_metadata: $json.metadata} }}",
+        "options": {}
+      },
+      "id": "store-trending",
+      "name": "Store Trending Topics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate engine results\nconst allInputs = $input.all();\nconst base = $items('Initialize Engine')[0]?.json || {};\n\nconst stored = allInputs.filter(i => !i.json.error);\nconst failed = allInputs.filter(i => i.json.error);\n\nconst categories = {};\nfor (const item of stored) {\n  const cat = item.json.category || 'other';\n  if (!categories[cat]) categories[cat] = 0;\n  categories[cat] += 1;\n}\n\nreturn [{\n  json: {\n    ...base,\n    engine_complete: true,\n    completed_at: new Date().toISOString(),\n    topics_stored: stored.length,\n    topics_failed: failed.length,\n    categories: categories\n  }\n}];"
+      },
+      "id": "aggregate-engine",
+      "name": "Aggregate Engine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Trending Engine\", description: \"Ranks normalized topics and stores top 100 per region/category in trending_topics table\", schedule: \"Runs every 40 minutes (after normaliser)\", input: {normalized_topics: \"From normaliser workflow\"}, output: {topics_stored: \"Number of topics stored\", categories: \"Breakdown by category\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"], dependencies: [\"Trending Normaliser\"], notes: \"Uses upsert_trending_topic function to merge duplicates\"}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Every 40 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 40 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Initialize Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Engine": {
+      "main": [
+        [
+          {
+            "node": "Load Normalized Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call Normaliser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Normalized Data": {
+      "main": [
+        [
+          {
+            "node": "Rank Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Normaliser": {
+      "main": [
+        [
+          {
+            "node": "Rank Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank Topics": {
+      "main": [
+        [
+          {
+            "node": "Store Trending Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Trending Topics": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Engine Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["trending", "engine", "ranking"]
+}
+

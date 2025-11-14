@@ -1,0 +1,110 @@
+{
+  "name": "Content Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-content",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "scheduler-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst scheduledTime = body.scheduled_time || body.scheduledTime;\nconst now = new Date();\nconst scheduled = new Date(scheduledTime);\n\nif (scheduled <= now) {\n  return [{json: {error: 'Scheduled time must be in the future', scheduledTime}}];\n}\n\nreturn [{json: {content: body.content || body, channels: body.channels || [], scheduledTime, webhookUrl: body.webhook_url || $vars.N8N_WEBHOOK_URL}}];"
+      },
+      "id": "validate-schedule",
+      "name": "Validate Schedule",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SCHEDULER_URL || 'http://localhost:3001'}}/api/schedule",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {webhookUrl: $json.webhookUrl, payload: {content: $json.content, channels: $json.channels}, channels: $json.channels, scheduledTime: $json.scheduledTime} }}",
+        "options": {}
+      },
+      "id": "schedule-job",
+      "name": "Schedule Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: $json.success || false, jobId: $json.jobId, scheduledTime: $json.scheduledTime || $json.estimatedExecution, error: $json.error || null} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Schedule": {
+      "main": [
+        [
+          {
+            "node": "Schedule Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Job": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["scheduler", "utility"]
+}
+

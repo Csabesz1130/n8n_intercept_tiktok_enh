@@ -1,0 +1,110 @@
+{
+  "name": "LinkedIn Publisher",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {content, visibility: 'PUBLIC'|'CONNECTIONS'}\n// Output: Formatted for LinkedIn\n\nconst content = $json.content || $json.text || $json.hook || '';\nconst visibility = $json.visibility || 'PUBLIC';\n\n// LinkedIn has a 3000 character limit for posts\nconst maxLength = 3000;\nlet postText = content;\n\nif (postText.length > maxLength) {\n  postText = postText.substring(0, maxLength - 3) + '...';\n}\n\nreturn [{\n  json: {\n    postText,\n    visibility,\n    originalLength: content.length,\n    truncated: content.length > maxLength\n  }\n}];"
+      },
+      "id": "format-content",
+      "name": "Format for LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.linkedin.com/v2/ugcPosts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$credentials.linkedin.accessToken}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Restli-Protocol-Version",
+              "value": "2.0.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {author: 'urn:li:person:' + $vars.LINKEDIN_PERSON_ID, lifecycleState: 'PUBLISHED', specificContent: {'com.linkedin.ugc.ShareContent': {shareCommentary: {text: $json.postText}, shareMediaCategory: 'NONE'}}, visibility: {'com.linkedin.ugc.MemberNetworkVisibility': $json.visibility}} }}",
+        "options": {}
+      },
+      "id": "publish-linkedin",
+      "name": "Publish to LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\nconst input = $items('Format for LinkedIn')[0]?.json || {};\n\nreturn [{\n  json: {\n    success: !!response.id,\n    postId: response.id,\n    postText: input.postText,\n    timestamp: new Date().toISOString(),\n    errors: response.error || null\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"LinkedIn Publisher\", description: \"Publishes professional content to LinkedIn\", input: {content: \"Text content for post\", visibility: \"'PUBLIC' or 'CONNECTIONS'\"}, output: {success: \"Boolean\", postId: \"Post ID\", timestamp: \"ISO timestamp\"}, required_credentials: [\"LinkedIn OAuth2\"], required_variables: [\"LINKEDIN_PERSON_ID\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Format for LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Publish to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

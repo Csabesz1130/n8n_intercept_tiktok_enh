@@ -1,0 +1,204 @@
+{
+  "name": "Organization Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "organization-content",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "org-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nreturn [{json: {user_id: body.user_id || 'org-001', keyword: body.keyword || '', topics: body.topics || [], organization_type: body.organization_type || 'organization', region: body.region || 'HU', prompt: body.prompt || '', translate_to: body.translate_to || [], newsletter_enabled: true}}];"
+      },
+      "id": "process-request",
+      "name": "Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-memory",
+      "name": "Call Memory System",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-generation",
+      "name": "Call Content Generation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-enhancement",
+      "name": "Call Content Enhancement",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-translation",
+      "name": "Call Translation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-newsletter",
+      "name": "Send Newsletter",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: true, ideas_generated: $json.ideas?.length || 0, translated: true, newsletter_sent: true, timestamp: $now} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Request": {
+      "main": [
+        [
+          {
+            "node": "Call Memory System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Memory System": {
+      "main": [
+        [
+          {
+            "node": "Call Content Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Content Generation": {
+      "main": [
+        [
+          {
+            "node": "Call Content Enhancement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Content Enhancement": {
+      "main": [
+        [
+          {
+            "node": "Call Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Translation": {
+      "main": [
+        [
+          {
+            "node": "Send Newsletter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Newsletter": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["organization", "newsletter", "translation"]
+}
+

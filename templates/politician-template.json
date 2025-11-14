@@ -1,0 +1,18 @@
+{
+  "user_id": "politician-001",
+  "organization_type": "party",
+  "region": "HU",
+  "target_audience": "fiatalok",
+  "content_tone": "friendly",
+  "topics": ["#kampány", "#politika", "#jövő"],
+  "account": {
+    "niche": "Hungarian politics",
+    "redLines": ["no hate speech", "respectful discourse", "fact-based"],
+    "preferredFormats": ["Talking Head", "Stitch", "Duet"],
+    "targetAudience": "Hungarian voters",
+    "tone": "engaging, clear, optimistic",
+    "brandWords": ["jövő", "fejlődés", "közösség"],
+    "language": "hu-HU"
+  }
+}
+

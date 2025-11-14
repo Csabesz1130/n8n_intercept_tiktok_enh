@@ -1,0 +1,106 @@
+{
+  "name": "Translation Module",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {ideas: [...], target_language: 'EN'}\n// Output: Translated ideas\n\nconst ideas = $json.ideas || [];\nconst targetLanguage = $json.target_language || 'EN';\nconst sourceLanguage = $json.source_language || 'HU';\n\n// Prepare content for translation\nconst contentToTranslate = ideas.map(idea => ({\n  id: idea.id,\n  hook: idea.hook || '',\n  concept: idea.concept || '',\n  caption: idea.caption || '',\n  CTA: idea.CTA || ''\n}));\n\nreturn [{\n  json: {\n    content: contentToTranslate,\n    target_language: targetLanguage,\n    source_language: sourceLanguage,\n    ideas: ideas\n  }\n}];"
+      },
+      "id": "prepare-translation",
+      "name": "Prepare Translation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api-free.deepl.com/v2/translate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=DeepL-Auth-Key {{$vars.DEEPL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {text: JSON.stringify($json.content), target_lang: $json.target_language, source_lang: $json.source_language} }}",
+        "options": {}
+      },
+      "id": "translate-deepl",
+      "name": "Translate via DeepL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge translations back into ideas\nconst originalIdeas = $items('Prepare Translation')[0]?.json?.ideas || [];\nconst translationResult = $json;\n\n// Parse translation result\nlet translations = [];\ntry {\n  if (translationResult.translations) {\n    translations = translationResult.translations.map(t => JSON.parse(t.text || '[]'));\n  }\n} catch (e) {\n  console.error('Translation parsing error:', e);\n}\n\n// Create translation map\nconst translationMap = new Map();\nfor (const trans of translations.flat()) {\n  if (trans.id) translationMap.set(trans.id, trans);\n}\n\n// Merge translations\nconst translatedIdeas = originalIdeas.map(idea => {\n  const trans = translationMap.get(idea.id);\n  if (trans) {\n    return {\n      ...idea,\n      hook_translated: trans.hook,\n      concept_translated: trans.concept,\n      caption_translated: trans.caption,\n      CTA_translated: trans.CTA,\n      translated: true\n    };\n  }\n  return {...idea, translated: false};\n});\n\nreturn [{\n  json: {\n    ideas: translatedIdeas,\n    translation_complete: true,\n    target_language: $items('Prepare Translation')[0]?.json?.target_language\n  }\n}];"
+      },
+      "id": "merge-translations",
+      "name": "Merge Translations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Translation Module\", description: \"Translates content ideas to target language using DeepL API\", input: {ideas: \"Array of content ideas\", target_language: \"Target language code (e.g., 'EN', 'DE')\", source_language: \"Source language code (default: 'HU')\"}, output: {ideas: \"Translated ideas array\", translation_complete: \"Boolean\"}, required_credentials: [\"DeepL API Key\"], required_variables: [\"DEEPL_API_KEY\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Translation": {
+      "main": [
+        [
+          {
+            "node": "Translate via DeepL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate via DeepL": {
+      "main": [
+        [
+          {
+            "node": "Merge Translations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

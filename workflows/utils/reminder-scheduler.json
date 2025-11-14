@@ -1,0 +1,243 @@
+{
+  "name": "Reminder Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-reminder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "reminder-scheduler-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: {recommendations: [{time, channel, score, reason}], user_id, content}\nconst body = $json.body || $json;\nconst recommendations = body.recommendations || [];\nconst user_id = body.user_id || 'demo-user';\nconst content = body.content || body.ideas || [];\n\n// Validate recommendations\nif (recommendations.length === 0) {\n  return [{json: {error: 'No recommendations provided', user_id}}];\n}\n\nreturn [{json: {user_id, content, recommendations, reminder_count: recommendations.length}}];"
+      },
+      "id": "process-request",
+      "name": "Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split recommendations into individual reminder jobs\nconst recommendations = $json.recommendations || [];\nconst base = $json;\n\nreturn recommendations.map(rec => ({\n  json: {\n    ...base,\n    reminder: rec,\n    scheduled_time: rec.time,\n    channel: rec.channel,\n    score: rec.score,\n    reason: rec.reason\n  }\n}));"
+      },
+      "id": "split-reminders",
+      "name": "Split into Reminder Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SCHEDULER_URL || 'http://localhost:3001'}}/api/schedule",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {webhookUrl: ($vars.N8N_WEBHOOK_URL || '') + '/webhook/send-reminder', payload: {user_id: $json.user_id, content: $json.content, reminder: $json.reminder, channel: $json.channel, score: $json.score, reason: $json.reason}, channels: [$json.channel], scheduledTime: $json.scheduled_time} }}",
+        "options": {}
+      },
+      "id": "schedule-reminder",
+      "name": "Schedule Reminder Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store reminder in Supabase for tracking\nconst reminder = $items('Split into Reminder Jobs')[0]?.json?.reminder || {};\nconst user_id = $items('Split into Reminder Jobs')[0]?.json?.user_id || '';\nconst scheduled = $json;\n\nconst reminderRecord = {\n  user_id,\n  reminder_id: scheduled.jobId || `reminder-${Date.now()}`,\n  scheduled_time: reminder.time || scheduled.scheduledTime,\n  channel: reminder.channel || '',\n  score: reminder.score || 0,\n  reason: reminder.reason || '',\n  status: 'scheduled',\n  created_at: new Date().toISOString()\n};\n\nreturn [{json: {...scheduled, reminder_record: reminderRecord}}];"
+      },
+      "id": "prepare-storage",
+      "name": "Prepare Reminder Storage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/reminders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.reminder_record }}",
+        "options": {}
+      },
+      "id": "store-reminder",
+      "name": "Store Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 200],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all reminder scheduling results\nconst allInputs = $input.all();\nconst base = $items('Process Request')[0]?.json || {};\n\nconst scheduled = allInputs.filter(i => i.json.success !== false);\nconst failed = allInputs.filter(i => i.json.success === false || i.json.error);\n\nreturn [{\n  json: {\n    user_id: base.user_id,\n    reminders_scheduled: scheduled.length,\n    reminders_failed: failed.length,\n    total_recommendations: base.reminder_count || 0,\n    scheduled_reminders: scheduled.map(s => ({\n      jobId: s.json.jobId,\n      scheduledTime: s.json.scheduledTime || s.json.scheduled_time,\n      channel: s.json.channel,\n      score: s.json.score\n    })),\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: true, reminders_scheduled: $json.reminders_scheduled, scheduled_reminders: $json.scheduled_reminders, timestamp: $now} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Reminder Scheduler\", description: \"Schedules reminder notifications for optimal posting times\", input: {recommendations: \"Array of time recommendations from Reminder Engine\", user_id: \"User identifier\", content: \"Content to remind about\"}, output: {reminders_scheduled: \"Number of reminders scheduled\", scheduled_reminders: \"Array of scheduled reminder details\"}, required_variables: [\"SCHEDULER_URL\", \"N8N_WEBHOOK_URL\", \"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"], dependencies: [\"Scheduler Service (port 3001)\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Request": {
+      "main": [
+        [
+          {
+            "node": "Split into Reminder Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split into Reminder Jobs": {
+      "main": [
+        [
+          {
+            "node": "Schedule Reminder Job",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Reminder Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Reminder Job": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reminder Storage": {
+      "main": [
+        [
+          {
+            "node": "Store Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Reminder": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["reminder", "scheduler"]
+}
+

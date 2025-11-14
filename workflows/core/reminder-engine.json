@@ -1,0 +1,240 @@
+{
+  "name": "Reminder Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {user_id, content, channels: ['twitter', 'linkedin'], ideas: [...]}\n// Output: Optimal posting time suggestions\n\nconst user_id = $json.user_id || 'demo-user';\nconst channels = $json.channels || [];\nconst content = $json.content || $json.ideas || [];\nconst region = $json.region || 'HU';\n\n// Prepare data for analysis\nreturn [{\n  json: {\n    user_id,\n    channels,\n    content,\n    region,\n    analysis_requested: true\n  }\n}];"
+      },
+      "id": "prepare-reminder",
+      "name": "Prepare Reminder Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/channel_metrics?select=*&user_id=eq.{{$json.user_id}}&channel=in.(${($json.channels || []).join(',')})&order=timestamp.desc&limit=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "load-historical",
+      "name": "Load Historical Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/user_preferences?select=*&user_id=eq.{{$json.user_id}}&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "load-preferences",
+      "name": "Load User Preferences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analyze historical data to find peak engagement times\nconst historical = Array.isArray($json) ? $json : [];\nconst base = $items('Prepare Reminder Request')[0]?.json || {};\n\n// Group metrics by hour of day\nconst hourlyEngagement = {};\nconst dayOfWeekEngagement = {};\n\nfor (const metric of historical) {\n  if (!metric.timestamp) continue;\n  \n  const date = new Date(metric.timestamp);\n  const hour = date.getHours();\n  const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday\n  \n  // Calculate engagement score\n  const engagement = (metric.likes || 0) * 1 + (metric.shares || 0) * 2 + (metric.views || 0) * 0.1;\n  \n  // Aggregate by hour\n  if (!hourlyEngagement[hour]) {\n    hourlyEngagement[hour] = { total: 0, count: 0 };\n  }\n  hourlyEngagement[hour].total += engagement;\n  hourlyEngagement[hour].count += 1;\n  \n  // Aggregate by day of week\n  if (!dayOfWeekEngagement[dayOfWeek]) {\n    dayOfWeekEngagement[dayOfWeek] = { total: 0, count: 0 };\n  }\n  dayOfWeekEngagement[dayOfWeek].total += engagement;\n  dayOfWeekEngagement[dayOfWeek].count += 1;\n}\n\n// Calculate average engagement per hour\nconst hourlyAverages = {};\nfor (const [hour, data] of Object.entries(hourlyEngagement)) {\n  hourlyAverages[hour] = data.total / data.count;\n}\n\n// Find top 3 hours\nconst topHours = Object.entries(hourlyAverages)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 3)\n  .map(([hour]) => parseInt(hour));\n\n// Find best day of week\nconst dayAverages = {};\nfor (const [day, data] of Object.entries(dayOfWeekEngagement)) {\n  dayAverages[day] = data.total / data.count;\n}\n\nconst bestDay = Object.entries(dayAverages)\n  .sort((a, b) => b[1] - a[1])[0]?.[0] || 1; // Default to Monday\n\nreturn [{\n  json: {\n    ...base,\n    historical_analysis: {\n      topHours,\n      bestDay: parseInt(bestDay),\n      hourlyAverages,\n      dayAverages,\n      sampleSize: historical.length\n    }\n  }\n}];"
+      },
+      "id": "analyze-history",
+      "name": "Analyze Historical Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get global peak times based on region and channel\nconst base = $items('Prepare Reminder Request')[0]?.json || {};\nconst region = base.region || 'HU';\nconst channels = base.channels || [];\n\n// Global peak time data (can be enhanced with external APIs)\nconst globalPeakTimes = {\n  twitter: {\n    HU: { hours: [9, 12, 18, 21], bestDays: [1, 2, 3, 4] }, // Monday-Thursday\n    US: { hours: [8, 12, 17, 20], bestDays: [1, 2, 3, 4] },\n    EU: { hours: [9, 13, 18, 21], bestDays: [1, 2, 3, 4] }\n  },\n  linkedin: {\n    HU: { hours: [8, 12, 17], bestDays: [1, 2, 3, 4, 5] }, // Weekdays\n    US: { hours: [7, 12, 17], bestDays: [1, 2, 3, 4, 5] },\n    EU: { hours: [8, 13, 17], bestDays: [1, 2, 3, 4, 5] }\n  },\n  mastodon: {\n    HU: { hours: [10, 14, 19, 22], bestDays: [0, 1, 2, 3, 4, 5, 6] }, // All days\n    US: { hours: [9, 13, 18, 21], bestDays: [0, 1, 2, 3, 4, 5, 6] },\n    EU: { hours: [10, 14, 19, 22], bestDays: [0, 1, 2, 3, 4, 5, 6] }\n  }\n};\n\n// Get peak times for each channel\nconst channelPeaks = {};\nfor (const channel of channels) {\n  const channelData = globalPeakTimes[channel] || globalPeakTimes.twitter;\n  const regionData = channelData[region] || channelData.HU || channelData.US;\n  channelPeaks[channel] = regionData;\n}\n\nreturn [{\n  json: {\n    ...base,\n    global_peaks: channelPeaks\n  }\n}];"
+      },
+      "id": "get-global-peaks",
+      "name": "Get Global Peak Times",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert in social media engagement optimization. Analyze historical performance data and global peak times to recommend the best posting times for maximum virality.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Analyze this data and recommend top 3 optimal posting times for the next 24-48 hours:\\n\\nHistorical Analysis: ' + JSON.stringify($items('Analyze Historical Data')[0]?.json?.historical_analysis || {}, null, 2) + '\\n\\nGlobal Peak Times: ' + JSON.stringify($items('Get Global Peak Times')[0]?.json?.global_peaks || {}, null, 2) + '\\n\\nChannels: ' + JSON.stringify($items('Prepare Reminder Request')[0]?.json?.channels || [], null, 2) + '\\n\\nRegion: ' + ($items('Prepare Reminder Request')[0]?.json?.region || 'HU') + '\\n\\nReturn JSON format: {recommendations: [{time: \"ISO 8601 datetime\", channel: \"channel name\", score: 0-100, reason: \"explanation\"}]}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "ai-recommend",
+      "name": "AI Time Recommendations",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [850, 250],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all data and format recommendations\nconst base = $items('Prepare Reminder Request')[0]?.json || {};\nconst historical = $items('Analyze Historical Data')[0]?.json?.historical_analysis || {};\nconst global = $items('Get Global Peak Times')[0]?.json?.global_peaks || {};\nconst aiResponse = $json;\n\n// Extract AI recommendations\nlet recommendations = [];\nif (aiResponse.recommendations) {\n  recommendations = aiResponse.recommendations;\n} else if (aiResponse.message?.content) {\n  try {\n    const parsed = JSON.parse(aiResponse.message.content);\n    recommendations = parsed.recommendations || [];\n  } catch (e) {\n    // Fallback to generating recommendations\n  }\n}\n\n// Fallback: Generate recommendations from historical + global data\nif (recommendations.length === 0) {\n  const now = new Date();\n  const topHours = historical.topHours || [9, 12, 18];\n  const bestDay = historical.bestDay || 1;\n  \n  for (let i = 0; i < 3; i++) {\n    const hoursAhead = (i + 1) * 8; // 8, 16, 24 hours ahead\n    const futureDate = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);\n    \n    // Adjust to peak hour\n    const targetHour = topHours[i % topHours.length];\n    futureDate.setHours(targetHour, 0, 0, 0);\n    \n    // Adjust to best day if needed\n    const currentDay = futureDate.getDay();\n    if (currentDay !== bestDay && i === 0) {\n      const daysUntilBest = (bestDay - currentDay + 7) % 7 || 7;\n      futureDate.setDate(futureDate.getDate() + daysUntilBest);\n    }\n    \n    recommendations.push({\n      time: futureDate.toISOString(),\n      channel: base.channels?.[0] || 'twitter',\n      score: 85 - (i * 10),\n      reason: `Optimal time based on historical performance (${historical.sampleSize || 0} posts analyzed)`\n    });\n  }\n}\n\n// Sort by score and time\nrecommendations.sort((a, b) => {\n  const scoreDiff = b.score - a.score;\n  if (scoreDiff !== 0) return scoreDiff;\n  return new Date(a.time) - new Date(b.time);\n});\n\nreturn [{\n  json: {\n    user_id: base.user_id,\n    content: base.content,\n    channels: base.channels,\n    recommendations: recommendations.slice(0, 3),\n    analysis: {\n      historical: historical,\n      global: global,\n      ai_used: recommendations.length > 0 && aiResponse.recommendations\n    },\n    generated_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "format-recommendations",
+      "name": "Format Recommendations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Reminder Engine\", description: \"Analyzes historical engagement and global peak times to recommend optimal posting times\", input: {user_id: \"User identifier\", content: \"Content to post\", channels: \"Array of channel names\", region: \"Target region\"}, output: {recommendations: \"Array of optimal posting times with scores\", analysis: \"Analysis data\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"], required_credentials: [\"OpenAI API\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reminder Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reminder Request": {
+      "main": [
+        [
+          {
+            "node": "Load Historical Metrics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load User Preferences",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Global Peak Times",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Historical Metrics": {
+      "main": [
+        [
+          {
+            "node": "Analyze Historical Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load User Preferences": {
+      "main": [
+        [
+          {
+            "node": "AI Time Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Historical Data": {
+      "main": [
+        [
+          {
+            "node": "AI Time Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Global Peak Times": {
+      "main": [
+        [
+          {
+            "node": "AI Time Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Time Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Format Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["reminder", "scheduling", "analytics"]
+}
+

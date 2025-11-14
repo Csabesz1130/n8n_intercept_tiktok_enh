@@ -1,0 +1,32 @@
+{
+  "name": "viral-n8n-custom-nodes",
+  "version": "1.0.0",
+  "description": "Custom n8n nodes for viral content publishing",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "n8n",
+    "n8n-community-node"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "n8n-workflow": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "nodes": [
+      "dist/TwitterNode.js",
+      "dist/LinkedInNode.js",
+      "dist/MastodonNode.js",
+      "dist/NewsletterNode.js"
+    ]
+  }
+}
+

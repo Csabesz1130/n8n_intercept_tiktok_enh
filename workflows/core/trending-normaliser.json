@@ -1,0 +1,210 @@
+{
+  "name": "Trending Normaliser",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/35 * * * *",
+        "triggerAtStartup": false
+      },
+      "id": "cron-trigger",
+      "name": "Every 35 Minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize normalization run\nreturn [{json: {\n  normalization_id: `norm-${Date.now()}`,\n  started_at: new Date().toISOString()\n}}];"
+      },
+      "id": "init-normalization",
+      "name": "Initialize Normalization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/source_raw?select=*&collected_at=gte.{{new Date(Date.now() - 60*60*1000).toISOString()}}&order=collected_at.desc&limit=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "load-raw-data",
+      "name": "Load Raw Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and normalize topics from raw data\nconst rawData = Array.isArray($json) ? $json : [];\nconst base = $items('Initialize Normalization')[0]?.json || {};\n\n// Normalize function\nfunction normalizeTopic(topic) {\n  if (!topic) return null;\n  return String(topic)\n    .toLowerCase()\n    .trim()\n    .replace(/[^a-z0-9\\s]/g, '') // Remove special chars\n    .replace(/\\s+/g, ' ') // Normalize whitespace\n    .substring(0, 200); // Limit length\n}\n\n// Extract topics from each source\nconst allTopics = [];\n\nfor (const item of rawData) {\n  const source = item.source;\n  const payload = item.payload || {};\n  \n  if (source === 'google_trends') {\n    const trends = payload.trends || [];\n    for (const trend of trends) {\n      const normalized = normalizeTopic(trend);\n      if (normalized) {\n        allTopics.push({\n          topic: trend,\n          normalized: normalized,\n          source: 'google_trends',\n          region: item.region || 'global'\n        });\n      }\n    }\n  } else if (source === 'twitter') {\n    const hashtags = payload.hashtags || [];\n    for (const tag of hashtags) {\n      const normalized = normalizeTopic(tag.replace('#', ''));\n      if (normalized) {\n        allTopics.push({\n          topic: tag,\n          normalized: normalized,\n          source: 'twitter',\n          region: item.region || 'global'\n        });\n      }\n    }\n  } else if (source === 'reddit') {\n    const topics = payload.topics || [];\n    for (const t of topics) {\n      const normalized = normalizeTopic(t.title);\n      if (normalized) {\n        allTopics.push({\n          topic: t.title,\n          normalized: normalized,\n          source: 'reddit',\n          region: item.region || 'global',\n          metadata: {subreddit: t.subreddit, score: t.score}\n        });\n      }\n    }\n  } else if (source === 'newsapi') {\n    const topics = payload.topics || [];\n    for (const t of topics) {\n      const normalized = normalizeTopic(t.title);\n      if (normalized) {\n        allTopics.push({\n          topic: t.title,\n          normalized: normalized,\n          source: 'newsapi',\n          region: item.region || 'global',\n          metadata: {source: t.source, url: t.url}\n        });\n      }\n    }\n  }\n}\n\n// Group by normalized topic\nconst topicGroups = {};\nfor (const item of allTopics) {\n  const key = item.normalized;\n  if (!topicGroups[key]) {\n    topicGroups[key] = {\n      normalized: key,\n      topics: [],\n      sources: new Set(),\n      regions: new Set(),\n      metadata: {}\n    };\n  }\n  topicGroups[key].topics.push(item.topic);\n  topicGroups[key].sources.add(item.source);\n  topicGroups[key].regions.add(item.region);\n  if (item.metadata) {\n    Object.assign(topicGroups[key].metadata, item.metadata);\n  }\n}\n\n// Convert to array\nconst normalizedTopics = Object.values(topicGroups).map(group => ({\n  ...base,\n  normalized_topic: group.normalized,\n  topic: group.topics[0], // Use first occurrence as canonical\n  sources: Array.from(group.sources),\n  source_count: group.sources.size,\n  regions: Array.from(group.regions),\n  metadata: group.metadata\n}));\n\nreturn normalizedTopics.map(t => ({json: t}));"
+      },
+      "id": "normalize-topics",
+      "name": "Normalize Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert at categorizing trending topics. Classify each topic into one of: tech, politics, finance, culture, sports, health, or other. Also estimate a popularity score (0-100) based on how viral/trending it seems.",
+              "role": "system"
+            },
+            {
+              "content": "={{ 'Classify these trending topics:\\n\\n' + $json.normalized_topic + '\\n\\nSources: ' + $json.sources.join(', ') + '\\n\\nReturn JSON: {category: \"tech|politics|finance|culture|sports|health|other\", popularity: 0-100, reason: \"brief explanation\"}' }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "categorize-ai",
+      "name": "Categorize with AI",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1050, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate velocity and final score\nconst base = $json;\nconst aiResponse = $json;\n\n// Extract AI category and popularity\nlet category = 'other';\nlet popularity = 50;\nlet reason = '';\n\nif (aiResponse.category) {\n  category = aiResponse.category;\n} else if (aiResponse.message?.content) {\n  try {\n    const parsed = JSON.parse(aiResponse.message.content);\n    category = parsed.category || category;\n    popularity = parsed.popularity || popularity;\n    reason = parsed.reason || '';\n  } catch (e) {\n    // Fallback\n  }\n}\n\n// Calculate velocity (rate of growth)\n// Higher source_count = more velocity\nconst velocity = Math.min(100, base.source_count * 20);\n\n// Calculate final score (weighted average)\n// popularity: 60%, velocity: 40%\nconst score = Math.round(\n  (popularity * 0.6) + (velocity * 0.4)\n);\n\n// Determine region (most common)\nconst region = base.regions?.[0] || 'global';\n\nreturn [{\n  json: {\n    ...base,\n    category,\n    popularity,\n    velocity,\n    score,\n    reason,\n    region,\n    ready_for_engine: true\n  }\n}];"
+      },
+      "id": "calculate-scores",
+      "name": "Calculate Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate normalization results\nconst allInputs = $input.all();\nconst base = $items('Initialize Normalization')[0]?.json || {};\n\nconst processed = allInputs.filter(i => i.json.ready_for_engine === true);\nconst categories = {};\n\nfor (const item of processed) {\n  const cat = item.json.category || 'other';\n  if (!categories[cat]) categories[cat] = 0;\n  categories[cat] += 1;\n}\n\nreturn [{\n  json: {\n    ...base,\n    normalization_complete: true,\n    completed_at: new Date().toISOString(),\n    topics_processed: processed.length,\n    categories: categories,\n    ready_for_engine: true\n  }\n}];"
+      },
+      "id": "aggregate-normalized",
+      "name": "Aggregate Normalized",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Trending Normaliser\", description: \"Deduplicates and normalizes topics from raw data, categorizes them with AI, and calculates scores\", schedule: \"Runs every 35 minutes (after collector)\", input: {raw_data: \"From source_raw table\"}, output: {normalized_topics: \"Array of normalized topics with categories and scores\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"], required_credentials: [\"OpenAI API\"], dependencies: [\"Trending Collector\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Every 35 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 35 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Initialize Normalization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Normalization": {
+      "main": [
+        [
+          {
+            "node": "Load Raw Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Raw Data": {
+      "main": [
+        [
+          {
+            "node": "Normalize Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Topics": {
+      "main": [
+        [
+          {
+            "node": "Categorize with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Categorize with AI": {
+      "main": [
+        [
+          {
+            "node": "Calculate Scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Scores": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Normalized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["trending", "normaliser", "ai"]
+}
+

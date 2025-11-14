@@ -1,0 +1,173 @@
+{
+  "name": "Get Trends",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "get-trends",
+        "responseMode": "responseNode",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "category",
+                "value": "={{$query.category || ''}}"
+              },
+              {
+                "name": "region",
+                "value": "={{$query.region || 'global'}}"
+              },
+              {
+                "name": "limit",
+                "value": "={{$query.limit || '50'}}"
+              },
+              {
+                "name": "min_score",
+                "value": "={{$query.min_score || '0'}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "get-trends-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process query parameters\nconst query = $json.query || {};\nconst category = query.category || '';\nconst region = query.region || 'global';\nconst limit = parseInt(query.limit || '50', 10);\nconst minScore = parseInt(query.min_score || '0', 10);\n\nreturn [{json: {\n  category,\n  region,\n  limit: Math.min(limit, 100), // Cap at 100\n  min_score: minScore\n}}];"
+      },
+      "id": "process-query",
+      "name": "Process Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/trending_topics_live?select=*&score=gte.{{$json.min_score}}&order=score.desc,last_seen.desc&limit={{$json.limit}}{{($json.category ? '&category=eq.' + $json.category : '')}}{{($json.region !== 'global' ? '&region=eq.' + $json.region : '')}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-trends",
+      "name": "Fetch Trends",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format trends for API response\nconst trends = Array.isArray($json) ? $json : [];\nconst query = $items('Process Query')[0]?.json || {};\n\nconst formatted = trends.map(t => ({\n  id: t.id,\n  topic: t.topic,\n  category: t.category,\n  region: t.region,\n  score: t.score,\n  velocity: t.velocity,\n  popularity: t.popularity,\n  temperature: t.temperature,\n  source_count: t.source_count,\n  sources: t.sources,\n  first_seen: t.first_seen,\n  last_seen: t.last_seen,\n  metadata: t.metadata\n}));\n\nreturn [{\n  json: {\n    success: true,\n    count: formatted.length,\n    filters: {\n      category: query.category || 'all',\n      region: query.region,\n      min_score: query.min_score\n    },\n    trends: formatted,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Get Trends\", description: \"Webhook endpoint to retrieve trending topics with filtering\", method: \"GET\", query_params: {category: \"Filter by category (tech, politics, etc.)\", region: \"Filter by region (default: global)\", limit: \"Max results (default: 50, max: 100)\", min_score: \"Minimum score (0-100)\"}, output: {success: \"Boolean\", count: \"Number of trends\", trends: \"Array of trending topics\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"], example: \"/webhook/get-trends?category=tech&region=US&limit=20&min_score=70\"}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Trends": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["trending", "webhook", "api"]
+}
+

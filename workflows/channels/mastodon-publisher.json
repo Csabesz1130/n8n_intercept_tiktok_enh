@@ -1,0 +1,106 @@
+{
+  "name": "Mastodon Publisher",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {content, visibility: 'public'|'unlisted'|'private'|'direct'}\n// Output: Formatted for Mastodon\n\nconst content = $json.content || $json.text || $json.hook || '';\nconst visibility = $json.visibility || 'public';\n\n// Mastodon has a 500 character limit\nconst maxLength = 500;\nlet statusText = content;\n\nif (statusText.length > maxLength) {\n  statusText = statusText.substring(0, maxLength - 3) + '...';\n}\n\nreturn [{\n  json: {\n    statusText,\n    visibility,\n    originalLength: content.length,\n    truncated: content.length > maxLength\n  }\n}];"
+      },
+      "id": "format-content",
+      "name": "Format for Mastodon",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.MASTODON_INSTANCE_URL}}/api/v1/statuses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.MASTODON_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {status: $json.statusText, visibility: $json.visibility} }}",
+        "options": {}
+      },
+      "id": "publish-mastodon",
+      "name": "Publish to Mastodon",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\nconst input = $items('Format for Mastodon')[0]?.json || {};\n\nreturn [{\n  json: {\n    success: !!response.id,\n    statusId: response.id,\n    statusText: input.statusText,\n    url: response.url || null,\n    timestamp: new Date().toISOString(),\n    errors: response.error || null\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Mastodon Publisher\", description: \"Publishes content to Mastodon instance\", input: {content: \"Text content for status\", visibility: \"'public', 'unlisted', 'private', or 'direct'\"}, output: {success: \"Boolean\", statusId: \"Status ID\", url: \"Status URL\", timestamp: \"ISO timestamp\"}, required_variables: [\"MASTODON_INSTANCE_URL\", \"MASTODON_ACCESS_TOKEN\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Format for Mastodon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Mastodon": {
+      "main": [
+        [
+          {
+            "node": "Publish to Mastodon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Mastodon": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

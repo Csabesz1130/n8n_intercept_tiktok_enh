@@ -1,0 +1,18 @@
+{
+  "user_id": "agency-001",
+  "organization_type": "consultant",
+  "region": "HU",
+  "target_audience": "varosi",
+  "content_tone": "energetic",
+  "topics": ["#marketing", "#kommunikáció", "#stratégia"],
+  "account": {
+    "niche": "Marketing and communications",
+    "redLines": ["no misleading claims", "transparent", "ethical"],
+    "preferredFormats": ["Green Screen", "Demo", "Talking Head"],
+    "targetAudience": "Business professionals",
+    "tone": "professional, creative, results-oriented",
+    "brandWords": ["innováció", "eredmény", "szakértelem"],
+    "language": "hu-HU"
+  }
+}
+

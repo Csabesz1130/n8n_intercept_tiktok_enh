@@ -1,0 +1,202 @@
+{
+  "name": "Memory System",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {user_id, keyword, topics, region, organization_type}\n// Output: {user_id, keyword, topics, region, organization_type, request_fingerprint, combined_fingerprint}\n\nconst crypto = require('crypto');\nconst user_id = $json.user_id || 'demo-user';\nconst keyword = $json.keyword || '';\nconst topics = $json.topics || [];\nconst region = $json.region || 'HU';\nconst organization_type = $json.organization_type || 'general';\n\n// Generate fingerprints\nconst request_basis = JSON.stringify({user_id, keyword, topics, region, organization_type});\nconst request_fingerprint = crypto.createHash('sha1').update(request_basis).digest('hex');\nconst combined_basis = JSON.stringify({user_id, keyword, region, organization_type, topics, request_fingerprint});\nconst combined_fingerprint = crypto.createHash('sha1').update(combined_basis).digest('hex');\n\nreturn [{\n  json: {\n    user_id,\n    keyword,\n    topics,\n    region,\n    organization_type,\n    request_fingerprint,\n    combined_fingerprint\n  }\n}];"
+      },
+      "id": "init-memory",
+      "name": "Initialize Memory Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/user_preferences?select=*&user_id=eq.{{$json.user_id}}&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "load-preferences",
+      "name": "Load User Preferences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/generated_ideas?select=*&user_id=eq.{{$json.user_id}}&request_fingerprint=eq.{{$json.request_fingerprint}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "check-duplicates",
+      "name": "Check Previous Ideas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/theme_coverage?select=*&user_id=eq.{{$json.user_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "load-themes",
+      "name": "Load Theme Coverage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 400],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge memory data\nconst base = $items('Initialize Memory Check')[0]?.json || {};\nconst prefs = Array.isArray($json) ? ($json[0] || {}) : ($json || {});\nconst prevIdeas = Array.isArray($json) ? $json : [];\nconst themes = Array.isArray($json) ? $json : [];\n\n// Check for duplicates (within last 7 days)\nlet duplicate = false;\nconst now = Date.now();\nfor (const idea of prevIdeas) {\n  const t = new Date(idea.created_at || idea.generated_at || Date.now()).getTime();\n  if (now - t < 7 * 24 * 3600 * 1000) {\n    duplicate = true;\n    break;\n  }\n}\n\n// Build account from preferences\nconst account = {\n  niche: prefs.niche || 'general',\n  redLines: prefs.red_lines || ['no hate', 'no doxxing'],\n  preferredFormats: prefs.preferred_formats || ['Standard'],\n  targetAudience: prefs.target_audience || 'general audience',\n  tone: prefs.tone || 'clear, professional',\n  brandWords: prefs.brand_words || [],\n  language: prefs.language || 'en-US'\n};\n\nreturn [{\n  json: {\n    ...base,\n    account,\n    duplicate,\n    previous_ideas_count: prevIdeas.length,\n    theme_coverage_count: themes.length,\n    should_generate: !duplicate\n  }\n}];"
+      },
+      "id": "merge-memory",
+      "name": "Merge Memory Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Memory System\", description: \"Manages user preferences, duplicate detection, and theme tracking\", input: {user_id: \"User identifier\", keyword: \"Content keyword\", topics: \"Array of topics\", region: \"Target region\", organization_type: \"Organization type\"}, output: {account: \"User account preferences\", duplicate: \"Boolean - is duplicate\", should_generate: \"Boolean - should generate new content\", previous_ideas_count: \"Number of previous ideas\", theme_coverage_count: \"Number of tracked themes\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Initialize Memory Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Memory Check": {
+      "main": [
+        [
+          {
+            "node": "Load User Preferences",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Previous Ideas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Theme Coverage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load User Preferences": {
+      "main": [
+        [
+          {
+            "node": "Merge Memory Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Previous Ideas": {
+      "main": [
+        [
+          {
+            "node": "Merge Memory Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Theme Coverage": {
+      "main": [
+        [
+          {
+            "node": "Merge Memory Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

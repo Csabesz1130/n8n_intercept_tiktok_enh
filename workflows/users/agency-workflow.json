@@ -1,0 +1,173 @@
+{
+  "name": "Agency Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agency-content",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "agency-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nreturn [{json: {user_id: body.user_id || 'agency-001', keyword: body.keyword || '', topics: body.topics || [], organization_type: 'consultant', region: body.region || 'HU', prompt: body.prompt || '', client_id: body.client_id || '', approval_required: true, channels: body.channels || ['twitter', 'linkedin']}}];"
+      },
+      "id": "process-request",
+      "name": "Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-memory",
+      "name": "Call Memory System",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-generation",
+      "name": "Call Content Generation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-enhancement",
+      "name": "Call Content Enhancement",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store for approval\nconst ideas = $json.ideas || [];\nconst clientId = $items('Process Request')[0]?.json?.client_id || '';\n\n// In production, store in database for approval\nreturn [{json: {ideas, client_id: clientId, approval_status: 'pending', approval_url: `https://dashboard.example.com/approve/${clientId}`, timestamp: new Date().toISOString()}}];"
+      },
+      "id": "store-for-approval",
+      "name": "Store for Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: true, ideas_generated: $json.ideas?.length || 0, approval_required: true, approval_url: $json.approval_url, timestamp: $now} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Request": {
+      "main": [
+        [
+          {
+            "node": "Call Memory System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Memory System": {
+      "main": [
+        [
+          {
+            "node": "Call Content Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Content Generation": {
+      "main": [
+        [
+          {
+            "node": "Call Content Enhancement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Content Enhancement": {
+      "main": [
+        [
+          {
+            "node": "Store for Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store for Approval": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["agency", "approval"]
+}
+

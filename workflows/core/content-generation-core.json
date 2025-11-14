@@ -1,0 +1,110 @@
+{
+  "name": "Content Generation Core",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {keyword, topics, organization_type, region, account}\n// Output: {system_prompt, user_prompt, keyword, topics, account}\n\nconst keyword = $json.keyword || 'topic';\nconst topics = $json.topics || [];\nconst organization_type = $json.organization_type || 'general';\nconst region = $json.region || 'HU';\nconst account = $json.account || {};\nconst prompt = $json.prompt || '';\nconst samplePosts = $json.samplePosts || [];\nconst topTags = $json.topTags || [];\n\n// Create system prompt\nconst system_prompt = `You are a senior content strategist specializing in ${organization_type} content.\n\nTASK: Generate professional, relevant content ideas for ${region} audience.\n\nORGANIZATION TYPE: ${organization_type}\nREGION: ${region}\n\nGUIDELINES:\n- Focus on ${region} context\n- Use current, relevant topics\n- All ideas should be practical and implementable\n- Consider ${organization_type} goals\n- Pay attention to ${region} regional specifics\n\nOUTPUT FORMAT: Respond in JSON format with \"ideas\" array, where each idea contains:\n- id: number\n- hook: engaging title\n- format: content type (e.g., \"Talking Head\", \"Green Screen\", \"Demo\")\n- concept: detailed concept description\n- beats: [array of string] - content structure\n- onScreenText: [array] - on-screen text elements\n- caption: social media description with hashtags\n- CTA: call to action\n- stitchOrDuet: \"Standalone\", \"Stitch\", or \"Duet\"\n- safetyNotes: [array] - safety considerations\n- saveValue: why this content is valuable\n- sourcePrompts: [array] - recommended sources\n\nRESPOND ONLY IN JSON FORMAT!`;\n\n// Create user prompt\nconst topHashtags = topTags.slice(0, 5).map(t => t.tag || t).join(', ');\nconst topicsList = Array.isArray(topics) ? topics.join(', ') : topics;\n\nconst user_prompt = `KEYWORD: \"${keyword}\"\n\nORGANIZATION DATA:\n- Type: ${organization_type}\n- Region: ${region}\n- Topics: ${topicsList}\n\n${prompt ? `CUSTOM REQUEST: \"${prompt}\"` : ''}\n\nTRENDING HASHTAGS: ${topHashtags}\n\nSAMPLE CONTENT ANALYSIS:\n${samplePosts.slice(0, 5).map(p => `\n- ${(p.description || '').substring(0, 100)}... \n  Engagement: ${p.likes || 0} likes, ${p.shares || 0} shares`).join('')}\n\nGENERATE 5-8 CONCRETE, RELEVANT CONTENT IDEAS FOR \"${keyword}\"!\n\nEach idea should be:\n- Practical and implementable\n- Appropriate and professional\n- Tailored to ${region} audience\n- Current and relevant\n\nRespond in JSON format!`;\n\nreturn [{\n  json: {\n    keyword,\n    topics,\n    organization_type,\n    region,\n    account,\n    system_prompt,\n    user_prompt,\n    samplePosts,\n    topTags\n  }\n}];"
+      },
+      "id": "prompt-builder-core",
+      "name": "Build Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{$json.system_prompt}}",
+              "role": "system"
+            },
+            {
+              "content": "={{$json.user_prompt}}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "openai-generate",
+      "name": "Generate Content Ideas",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [450, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract ideas from GPT response\nlet ideas = [];\nconst rawResponse = $json;\n\n// Try different extraction paths\nif (rawResponse.message?.content?.ideas) {\n  ideas = rawResponse.message.content.ideas;\n} else if (rawResponse.content?.ideas) {\n  ideas = rawResponse.content.ideas;\n} else if (rawResponse.ideas) {\n  ideas = rawResponse.ideas;\n} else if (rawResponse.message?.content) {\n  try {\n    const contentObj = JSON.parse(rawResponse.message.content);\n    if (contentObj.ideas) ideas = contentObj.ideas;\n  } catch (e) {}\n} else if (typeof rawResponse.content === 'string') {\n  try {\n    const contentObj = JSON.parse(rawResponse.content);\n    if (contentObj.ideas) ideas = contentObj.ideas;\n  } catch (e) {}\n}\n\nif (!Array.isArray(ideas)) ideas = [];\n\n// Fallback if no ideas\nif (ideas.length === 0) {\n  const keyword = $items('Build Prompts')[0]?.json?.keyword || 'topic';\n  ideas = [{\n    id: 1,\n    hook: `${keyword} - Overview`,\n    format: \"Talking Head\",\n    concept: `Simple overview video about ${keyword}`,\n    beats: [\"Introduction\", \"Main points\", \"Conclusion\"],\n    onScreenText: [\"FACTS\", \"DATA\", \"CONCLUSION\"],\n    caption: `${keyword} explained #content`,\n    CTA: \"What do you think?\",\n    stitchOrDuet: \"Standalone\",\n    safetyNotes: [\"Verified facts only\"],\n    saveValue: \"Useful overview\",\n    sourcePrompts: [\"Official statistics\", \"Reliable sources\"]\n  }];\n}\n\nreturn [{\n  json: {\n    ideas,\n    ideas_count: ideas.length,\n    extraction_successful: ideas.length > 0\n  }\n}];"
+      },
+      "id": "extract-ideas",
+      "name": "Extract Ideas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Documentation node\nreturn [{\n  json: {\n    documentation: {\n      name: \"Content Generation Core\",\n      description: \"Core module for AI-powered content idea generation\",\n      input: {\n        keyword: \"Main topic/keyword\",\n        topics: \"Array of related topics/hashtags\",\n        organization_type: \"Type of organization\",\n        region: \"Target region\",\n        account: \"User account preferences\",\n        samplePosts: \"Sample content for inspiration (optional)\",\n        topTags: \"Trending tags (optional)\"\n      },\n      output: {\n        ideas: \"Array of generated content ideas\",\n        ideas_count: \"Number of ideas generated\",\n        extraction_successful: \"Whether extraction was successful\"\n      },\n      required_credentials: [\"OpenAI API\"],\n      customization: \"Modify system_prompt and user_prompt in 'Build Prompts' node\"\n    }\n  }\n}];"
+      },
+      "id": "doc-node",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Build Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompts": {
+      "main": [
+        [
+          {
+            "node": "Generate Content Ideas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content Ideas": {
+      "main": [
+        [
+          {
+            "node": "Extract Ideas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

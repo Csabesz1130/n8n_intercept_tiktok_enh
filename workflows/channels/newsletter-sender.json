@@ -1,0 +1,192 @@
+{
+  "name": "Newsletter Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {content, subject, list_id, provider: 'mailchimp'|'sendgrid'}\n// Output: Formatted for newsletter\n\nconst content = $json.content || $json.text || '';\nconst subject = $json.subject || 'Newsletter';\nconst listId = $json.list_id || $json.listId || '';\nconst provider = $json.provider || 'mailchimp';\n\n// Convert plain text to HTML if needed\nlet htmlContent = content;\nif (!content.includes('<')) {\n  htmlContent = content.split('\\n').map(line => `<p>${line}</p>`).join('');\n}\n\nreturn [{\n  json: {\n    htmlContent,\n    subject,\n    listId,\n    provider\n  }\n}];"
+      },
+      "id": "format-newsletter",
+      "name": "Format Newsletter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.provider}}",
+              "rightValue": "mailchimp",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-provider",
+      "name": "Check Provider",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.MAILCHIMP_API_URL}}/3.0/campaigns",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.MAILCHIMP_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {type: 'regular', recipients: {list_id: $json.listId}, settings: {subject_line: $json.subject, from_name: $vars.MAILCHIMP_FROM_NAME || 'Newsletter', reply_to: $vars.MAILCHIMP_REPLY_TO}} }}",
+        "options": {}
+      },
+      "id": "create-mailchimp",
+      "name": "Create Mailchimp Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.sendgrid.com/v3/mail/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SENDGRID_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {personalizations: [{to: [{email: $json.listId}], subject: $json.subject}], from: {email: $vars.SENDGRID_FROM_EMAIL || 'noreply@example.com', name: $vars.SENDGRID_FROM_NAME || 'Newsletter'}, content: [{type: 'text/html', value: $json.htmlContent}]} }}",
+        "options": {}
+      },
+      "id": "send-sendgrid",
+      "name": "Send via SendGrid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 400],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\nconst input = $items('Format Newsletter')[0]?.json || {};\n\nreturn [{\n  json: {\n    success: !response.error && (!!response.id || response.statusCode === 202),\n    campaignId: response.id || null,\n    subject: input.subject,\n    provider: input.provider,\n    timestamp: new Date().toISOString(),\n    errors: response.error || null\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Newsletter Sender\", description: \"Sends newsletters via Mailchimp or SendGrid\", input: {content: \"HTML or text content\", subject: \"Email subject\", list_id: \"Mailchimp list ID or SendGrid recipient email\", provider: \"'mailchimp' or 'sendgrid'\"}, output: {success: \"Boolean\", campaignId: \"Campaign ID (Mailchimp)\", timestamp: \"ISO timestamp\"}, required_variables: [\"MAILCHIMP_API_KEY\" or \"SENDGRID_API_KEY\"]}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Format Newsletter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Newsletter": {
+      "main": [
+        [
+          {
+            "node": "Check Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Provider": {
+      "main": [
+        [
+          {
+            "node": "Create Mailchimp Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send via SendGrid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Mailchimp Campaign": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via SendGrid": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

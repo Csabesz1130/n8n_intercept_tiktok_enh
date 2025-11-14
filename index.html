@@ -149,6 +149,52 @@
           </select>
         </div>
       </div>
+
+      <label for="target_persona">Célzott persona (opcionális)</label>
+      <input id="target_persona" name="target_persona" 
+             placeholder="pl. 'fiatal városi szavazó', 'vidéki családapa', 'egyetemista aktivista'" />
+      <small>Részletesebb célközönség leírás a tartalom személyre szabásához</small>
+    </div>
+
+    <!-- Publishing Channels Section -->
+    <div class="form-section">
+      <h2 class="section-title">Publikálási csatornák</h2>
+      
+      <div class="checkbox-group">
+        <div class="checkbox-item">
+          <input type="checkbox" id="channel_twitter" name="channels[]" value="twitter">
+          <label for="channel_twitter">Twitter/X</label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="channel_linkedin" name="channels[]" value="linkedin">
+          <label for="channel_linkedin">LinkedIn</label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="channel_mastodon" name="channels[]" value="mastodon">
+          <label for="channel_mastodon">Mastodon</label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="channel_newsletter" name="channels[]" value="newsletter">
+          <label for="channel_newsletter">Newsletter (Mailchimp/SendGrid)</label>
+        </div>
+      </div>
+      
+      <div class="row" style="margin-top: 16px;">
+        <div>
+          <label for="schedule_time">Ütemezett publikálás (opcionális)</label>
+          <input type="datetime-local" id="schedule_time" name="schedule_time" 
+                 min="{{ new Date().toISOString().slice(0, 16) }}" />
+          <small>Ha nincs megadva, azonnali feldolgozás történik</small>
+        </div>
+        <div>
+          <label for="publish_immediately">Publikálás módja</label>
+          <select id="publish_immediately" name="publish_immediately">
+            <option value="review">Csak előnézet (nem publikál)</option>
+            <option value="schedule">Ütemezés (ha időpont megadva)</option>
+            <option value="approve">Jóváhagyás után publikál</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <!-- Topics and Keywords Section -->
@@ -241,6 +287,7 @@
 
     <!-- Hidden fields -->
     <input type="hidden" id="run_now" name="run_now" value="1" />
+    <input type="hidden" id="channels_json" name="channels_json" value="" />
 
     <!-- Action buttons -->
     <div class="actions">
@@ -270,7 +317,12 @@
     // First button sets run_now=0
     document.querySelector('.secondary').addEventListener('click', () => { runHidden.value = '0'; });
 
-    form.addEventListener('submit', () => {
+    // Collect channels before submit
+    form.addEventListener('submit', (e) => {
+      const channelCheckboxes = document.querySelectorAll('input[name="channels[]"]:checked');
+      const selectedChannels = Array.from(channelCheckboxes).map(cb => cb.value);
+      document.getElementById('channels_json').value = JSON.stringify(selectedChannels);
+      
       msg.className = 'pending';
       msg.textContent = '⏳ Feldolgozás folyamatban... Ez néhány percet igénybe vehet.';
       setTimeout(() => { runHidden.value = runSelect.value; }, 0);

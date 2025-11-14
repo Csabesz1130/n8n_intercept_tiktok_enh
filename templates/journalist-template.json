@@ -1,0 +1,18 @@
+{
+  "user_id": "journalist-001",
+  "organization_type": "journalist",
+  "region": "HU",
+  "target_audience": "general",
+  "content_tone": "authoritative",
+  "topics": ["#hírek", "#politika", "#gazdaság"],
+  "account": {
+    "niche": "Hungarian news and politics",
+    "redLines": ["no fake news", "verify sources", "fact-check required"],
+    "preferredFormats": ["Talking Head", "Green Screen"],
+    "targetAudience": "Hungarian news readers",
+    "tone": "objective, informative, balanced",
+    "brandWords": ["tények", "objektív", "hiteles"],
+    "language": "hu-HU"
+  }
+}
+

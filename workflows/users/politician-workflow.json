@@ -1,0 +1,268 @@
+{
+  "name": "Politician Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "politician-content",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "politician-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nreturn [{json: {user_id: body.user_id || 'politician-001', keyword: body.keyword || '', topics: body.topics || [], organization_type: 'party', region: body.region || 'HU', prompt: body.prompt || '', sentiment_check: true, schedule_time: body.schedule_time || null, channels: body.channels || []}}];"
+      },
+      "id": "process-request",
+      "name": "Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-memory",
+      "name": "Call Memory System",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-generation",
+      "name": "Call Content Generation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "source": "database"
+      },
+      "id": "call-enhancement",
+      "name": "Call Content Enhancement",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter by positive sentiment for politicians\nconst ideas = $json.ideas || [];\nconst sentimentFiltered = ideas.filter(idea => {\n  const sentiment = idea.sentiment || 'neutral';\n  return sentiment === 'positive' || sentiment === 'neutral';\n});\n\nreturn [{json: {ideas: sentimentFiltered.length > 0 ? sentimentFiltered : ideas, sentiment_filtered: true}}];"
+      },
+      "id": "filter-sentiment",
+      "name": "Filter by Sentiment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$items('Process Request')[0].json.schedule_time}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-schedule",
+      "name": "Check Schedule",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SCHEDULER_URL || 'http://localhost:3001'}}/api/schedule",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {webhookUrl: $vars.N8N_WEBHOOK_URL, payload: {ideas: $json.ideas, channels: $items('Process Request')[0].json.channels}, channels: $items('Process Request')[0].json.channels, scheduledTime: $items('Process Request')[0].json.schedule_time} }}",
+        "options": {}
+      },
+      "id": "schedule-post",
+      "name": "Schedule Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: true, ideas_generated: $json.ideas?.length || 0, scheduled: true, timestamp: $now} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-scheduled",
+      "name": "Respond Scheduled",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: true, ideas_generated: $json.ideas?.length || 0, published: false, ready_for_review: true, timestamp: $now} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-immediate",
+      "name": "Respond Immediate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1650, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Request": {
+      "main": [
+        [
+          {
+            "node": "Call Memory System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Memory System": {
+      "main": [
+        [
+          {
+            "node": "Call Content Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Content Generation": {
+      "main": [
+        [
+          {
+            "node": "Call Content Enhancement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Content Enhancement": {
+      "main": [
+        [
+          {
+            "node": "Filter by Sentiment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter by Sentiment": {
+      "main": [
+        [
+          {
+            "node": "Check Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Schedule": {
+      "main": [
+        [
+          {
+            "node": "Schedule Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Immediate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Post": {
+      "main": [
+        [
+          {
+            "node": "Respond Scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["politician", "scheduling"]
+}
+

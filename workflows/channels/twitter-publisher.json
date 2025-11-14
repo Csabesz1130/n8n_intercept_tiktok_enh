@@ -1,0 +1,106 @@
+{
+  "name": "Twitter Publisher",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: {content, media_url (optional)}\n// Output: Formatted for Twitter\n\nconst content = $json.content || $json.hook || $json.text || '';\nconst mediaUrl = $json.media_url || $json.mediaUrl || '';\n\n// Twitter character limit\nconst maxLength = 280;\nlet tweetText = content;\n\n// Truncate if needed\nif (tweetText.length > maxLength) {\n  tweetText = tweetText.substring(0, maxLength - 3) + '...';\n}\n\nreturn [{\n  json: {\n    tweetText,\n    mediaUrl,\n    originalLength: content.length,\n    truncated: content.length > maxLength\n  }\n}];"
+      },
+      "id": "format-content",
+      "name": "Format for Twitter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twitter.com/2/tweets",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$credentials.twitter.bearerToken}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {text: $json.tweetText} }}",
+        "options": {}
+      },
+      "id": "publish-twitter",
+      "name": "Publish to Twitter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format response\nconst response = $json;\nconst input = $items('Format for Twitter')[0]?.json || {};\n\nreturn [{\n  json: {\n    success: !response.errors,\n    tweetId: response.data?.id,\n    tweetText: input.tweetText,\n    url: response.data?.id ? `https://twitter.com/i/web/status/${response.data.id}` : null,\n    timestamp: new Date().toISOString(),\n    errors: response.errors || null\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Twitter Publisher\", description: \"Publishes content to Twitter/X\", input: {content: \"Text content to tweet\", media_url: \"Optional media URL\"}, output: {success: \"Boolean\", tweetId: \"Tweet ID\", url: \"Tweet URL\", timestamp: \"ISO timestamp\"}, required_credentials: [\"Twitter Bearer Token\"], notes: \"Content is automatically truncated to 280 characters\"}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Format for Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Twitter": {
+      "main": [
+        [
+          {
+            "node": "Publish to Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}
+

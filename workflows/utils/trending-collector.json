@@ -1,0 +1,367 @@
+{
+  "name": "Trending Collector",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *",
+        "triggerAtStartup": false
+      },
+      "id": "cron-trigger",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize collection run\nreturn [{json: {\n  collection_id: `trend-${Date.now()}`,\n  started_at: new Date().toISOString(),\n  region: 'global'\n}}];"
+      },
+      "id": "init-collection",
+      "name": "Initialize Collection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.serpapi.com/search?engine=google_trends&geo={{$json.region || 'US'}}&data_type=TIMESERIES&api_key={{$vars.SERPAPI_KEY || ''}}",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "google-trends",
+      "name": "Google Trends API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://api.twitter.com/2/tweets/search/recent?query=lang:en -is:retweet&max_results=100&tweet.fields=public_metrics,created_at",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.TWITTER_BEARER_TOKEN || ''}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "twitter-api",
+      "name": "Twitter API v2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://www.reddit.com/r/all/hot.json?limit=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "viral-n8n-trending/1.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "reddit-api",
+      "name": "Reddit API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 400],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://newsapi.org/v2/top-headlines?country=us&apiKey={{$vars.NEWSAPI_KEY || ''}}&pageSize=100",
+        "sendHeaders": true,
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "newsapi",
+      "name": "NewsAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 500],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Google Trends response\nconst base = $items('Initialize Collection')[0]?.json || {};\nconst response = $json;\n\nif (!response || response.error) {\n  return [{json: {source: 'google_trends', success: false, error: response?.error || 'No data'}}];\n}\n\n// Extract trending searches\nconst trends = response.default?.timelineData || [];\nconst topics = trends\n  .map(t => t.value || [])\n  .flat()\n  .map(item => item.query || item)\n  .filter(Boolean)\n  .slice(0, 50);\n\nreturn [{json: {\n  ...base,\n  source: 'google_trends',\n  success: true,\n  payload: {trends: topics, raw: response},\n  topic_count: topics.length\n}}];"
+      },
+      "id": "process-google",
+      "name": "Process Google Trends",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Twitter response\nconst base = $items('Initialize Collection')[0]?.json || {};\nconst response = $json;\n\nif (!response || response.errors) {\n  return [{json: {source: 'twitter', success: false, error: response?.errors?.[0]?.message || 'No data'}}];\n}\n\n// Extract hashtags and trending topics\nconst tweets = response.data || [];\nconst hashtags = {};\nconst topics = [];\n\nfor (const tweet of tweets) {\n  const text = tweet.text || '';\n  const metrics = tweet.public_metrics || {};\n  const engagement = (metrics.like_count || 0) + (metrics.retweet_count || 0) * 2;\n  \n  // Extract hashtags\n  const matches = text.match(/#\\w+/g) || [];\n  for (const tag of matches) {\n    const normalized = tag.toLowerCase();\n    if (!hashtags[normalized]) {\n      hashtags[normalized] = {count: 0, engagement: 0};\n    }\n    hashtags[normalized].count += 1;\n    hashtags[normalized].engagement += engagement;\n  }\n  \n  // Extract potential topics (simplified)\n  if (engagement > 100) {\n    topics.push({\n      text: text.substring(0, 100),\n      engagement,\n      created_at: tweet.created_at\n    });\n  }\n}\n\nconst topHashtags = Object.entries(hashtags)\n  .sort((a, b) => b[1].engagement - a[1].engagement)\n  .slice(0, 50)\n  .map(([tag, data]) => tag);\n\nreturn [{json: {\n  ...base,\n  source: 'twitter',\n  success: true,\n  payload: {hashtags: topHashtags, topics, raw: response},\n  topic_count: topHashtags.length\n}}];"
+      },
+      "id": "process-twitter",
+      "name": "Process Twitter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Reddit response\nconst base = $items('Initialize Collection')[0]?.json || {};\nconst response = $json;\n\nif (!response || !response.data) {\n  return [{json: {source: 'reddit', success: false, error: 'No data'}}];\n}\n\n// Extract top posts\nconst posts = response.data.children || [];\nconst topics = posts\n  .map(p => p.data)\n  .filter(p => p.score > 100) // Filter by score\n  .map(p => ({\n    title: p.title,\n    subreddit: p.subreddit,\n    score: p.score,\n    upvote_ratio: p.upvote_ratio,\n    url: p.url,\n    created_utc: p.created_utc\n  }))\n  .slice(0, 50);\n\nreturn [{json: {\n  ...base,\n  source: 'reddit',\n  success: true,\n  payload: {topics, raw: response},\n  topic_count: topics.length\n}}];"
+      },
+      "id": "process-reddit",
+      "name": "Process Reddit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process NewsAPI response\nconst base = $items('Initialize Collection')[0]?.json || {};\nconst response = $json;\n\nif (!response || response.status !== 'ok') {\n  return [{json: {source: 'newsapi', success: false, error: response?.message || 'No data'}}];\n}\n\n// Extract headlines\nconst articles = response.articles || [];\nconst topics = articles\n  .map(a => ({\n    title: a.title,\n    source: a.source?.name,\n    url: a.url,\n    publishedAt: a.publishedAt,\n    description: a.description\n  }))\n  .slice(0, 50);\n\nreturn [{json: {\n  ...base,\n  source: 'newsapi',\n  success: true,\n  payload: {topics, raw: response},\n  topic_count: topics.length\n}}];"
+      },
+      "id": "process-newsapi",
+      "name": "Process NewsAPI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/source_raw",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {source: $json.source, payload: $json.payload, region: $json.region || 'global', metadata: {topic_count: $json.topic_count, success: $json.success}} }}",
+        "options": {}
+      },
+      "id": "store-raw",
+      "name": "Store Raw Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate collection results\nconst allInputs = $input.all();\nconst base = $items('Initialize Collection')[0]?.json || {};\n\nconst successful = allInputs.filter(i => i.json.success !== false);\nconst failed = allInputs.filter(i => i.json.success === false);\nconst totalTopics = successful.reduce((sum, i) => sum + (i.json.topic_count || 0), 0);\n\nreturn [{\n  json: {\n    ...base,\n    collection_complete: true,\n    completed_at: new Date().toISOString(),\n    sources_successful: successful.length,\n    sources_failed: failed.length,\n    total_topics_collected: totalTopics,\n    sources: successful.map(s => s.json.source)\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Trending Collector\", description: \"Collects trending topics from Google Trends, Twitter, Reddit, and NewsAPI every 30 minutes\", schedule: \"Runs every 30 minutes\", sources: [\"google_trends\", \"twitter\", \"reddit\", \"newsapi\"], output: {total_topics_collected: \"Number of topics collected\", sources_successful: \"Number of successful API calls\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\", \"SERPAPI_KEY (optional)\", \"TWITTER_BEARER_TOKEN (optional)\", \"NEWSAPI_KEY (optional)\"], notes: \"Some APIs require API keys. Reddit is free but rate-limited.\"}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Every 30 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Initialize Collection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Collection": {
+      "main": [
+        [
+          {
+            "node": "Google Trends API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Twitter API v2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reddit API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NewsAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Trends API": {
+      "main": [
+        [
+          {
+            "node": "Process Google Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twitter API v2": {
+      "main": [
+        [
+          {
+            "node": "Process Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit API": {
+      "main": [
+        [
+          {
+            "node": "Process Reddit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NewsAPI": {
+      "main": [
+        [
+          {
+            "node": "Process NewsAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Google Trends": {
+      "main": [
+        [
+          {
+            "node": "Store Raw Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Twitter": {
+      "main": [
+        [
+          {
+            "node": "Store Raw Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Reddit": {
+      "main": [
+        [
+          {
+            "node": "Store Raw Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process NewsAPI": {
+      "main": [
+        [
+          {
+            "node": "Store Raw Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Raw Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["trending", "collector", "scheduled"]
+}
+

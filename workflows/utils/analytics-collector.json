@@ -1,0 +1,193 @@
+{
+  "name": "Analytics Collector",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 2 * * *",
+        "triggerAtStartup": false
+      },
+      "id": "cron-trigger",
+      "name": "Daily Analytics Collection",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all users with published content\nreturn [{json: {collection_started: true, timestamp: new Date().toISOString()}}];"
+      },
+      "id": "init-collection",
+      "name": "Initialize Collection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/published_content?select=user_id,post_id,channel&published=true&limit=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-published",
+      "name": "Get Published Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fetch metrics for each post from social media APIs\nconst posts = Array.isArray($json) ? $json : [];\nconst metrics = [];\n\nfor (const post of posts) {\n  const { post_id, channel, user_id } = post;\n  \n  // In production, call actual APIs:\n  // - Twitter API v2: GET /2/tweets/:id\n  // - LinkedIn API: GET /v2/ugcPosts/:id\n  // - Mastodon API: GET /api/v1/statuses/:id\n  \n  // For now, simulate or use available data\n  const metric = {\n    user_id,\n    post_id,\n    channel,\n    timestamp: new Date().toISOString(),\n    likes: Math.floor(Math.random() * 1000), // Placeholder\n    shares: Math.floor(Math.random() * 100), // Placeholder\n    views: Math.floor(Math.random() * 5000), // Placeholder\n    comments: Math.floor(Math.random() * 50), // Placeholder\n    engagement_score: 0\n  };\n  \n  // Calculate engagement score\n  metric.engagement_score = \n    (metric.likes || 0) * 1 +\n    (metric.shares || 0) * 2 +\n    (metric.comments || 0) * 1.5 +\n    (metric.views || 0) * 0.1;\n  \n  metrics.push(metric);\n}\n\n// Split into individual items for processing\nreturn metrics.map(m => ({json: m}));"
+      },
+      "id": "fetch-metrics",
+      "name": "Fetch Metrics from APIs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/channel_metrics",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "store-metrics",
+      "name": "Store Metrics in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate collection results\nconst allInputs = $input.all();\nconst successCount = allInputs.filter(i => !i.json.error).length;\nconst totalCount = allInputs.length;\n\nreturn [{\n  json: {\n    collection_complete: true,\n    metrics_collected: successCount,\n    total_posts: totalCount,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {documentation: {name: \"Analytics Collector\", description: \"Nightly workflow that collects engagement metrics from social media APIs and stores in Supabase\", schedule: \"Runs daily at 2 AM\", output: {metrics_collected: \"Number of metrics stored\", collection_complete: \"Boolean\"}, required_variables: [\"SUPABASE_URL\", \"SUPABASE_ANON_KEY\"], notes: \"In production, implement actual API calls to Twitter, LinkedIn, Mastodon APIs\"}}}]"
+      },
+      "id": "doc",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [50, 300]
+    }
+  ],
+  "connections": {
+    "Documentation": {
+      "main": [
+        [
+          {
+            "node": "Initialize Collection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Analytics Collection": {
+      "main": [
+        [
+          {
+            "node": "Initialize Collection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Collection": {
+      "main": [
+        [
+          {
+            "node": "Get Published Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Published Posts": {
+      "main": [
+        [
+          {
+            "node": "Fetch Metrics from APIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Metrics from APIs": {
+      "main": [
+        [
+          {
+            "node": "Store Metrics in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Metrics in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": ["analytics", "metrics", "scheduled"]
+}
+
