@@ -32,192 +32,71 @@ A powerful, AI-driven content generation and multi-channel publishing platform b
 
 ## 📋 Prerequisites
 
-- Node.js 18+ and npm
-- n8n instance (cloud or self-hosted)
-- Redis (for scheduler service)
-- API keys for:
+- **Docker and Docker Compose**: For running the entire application stack.
+- **Node.js 18+ and npm**: For dependency management and running setup scripts.
+- **API Keys**:
   - OpenAI
-  - DeepL (optional, for translation)
-  - Twitter/X API
-  - LinkedIn API
-  - Mastodon (instance-specific)
-  - Mailchimp or SendGrid
   - Supabase (for data storage)
+  - _(Optional)_ DeepL, Twitter/X, LinkedIn, etc.
 
 ## 🛠️ Installation
 
 ### Quick Start (Recommended)
 
-**Windows:**
-```powershell
-npm run setup
-.\start.ps1
-```
+1.  **Clone the Repository**
+    ```bash
+    git clone <repository-url>
+    cd n8n_intercept_tiktok_enh
+    ```
 
-**Linux/Mac:**
-```bash
-npm run setup
-chmod +x start.sh
-./start.sh
-```
+2.  **Run the Setup Script**
+    This will install all dependencies and create the necessary `.env` files.
+    ```bash
+    npm run setup
+    ```
 
-Then open http://localhost:3000 in your browser!
+3.  **Add Your API Keys**
+    Edit the newly created `.env` files in `dashboard/` and `scheduler/` with your API keys (especially Supabase and OpenAI).
 
-See **[QUICK_START.md](QUICK_START.md)** for detailed instructions.
+4.  **Start All Services**
+    ```bash
+    docker-compose up -d
+    ```
+
+5.  **Access the applications:**
+    - **Dashboard**: http://localhost:3000
+    - **n8n**: http://localhost:5678
+
+See **[QUICK_START.md](QUICK_START.md)** for more detailed instructions.
 
 ### Manual Installation
 
-### 1. Clone the Repository
-
-```bash
-git clone <repository-url>
-cd n8n_intercept_tiktok_enh
-```
-
-### 2. Run Setup
-
-```bash
-npm run setup
-```
-
-This will install all dependencies and create environment files.
-
-### 3. Configure Environment
-
-Edit `.env` files with your API keys (see [SETUP.md](SETUP.md) for details).
-
-### 4. Start Services
-
-```bash
-npm run dev
-```
-
-Or use platform-specific scripts:
-- Windows: `.\start.ps1` or `start-dev.bat`
-- Linux/Mac: `./start.sh`
-
-### 5. Import n8n Workflow
-
-1. Open your n8n instance
-2. Import `whatcanitdo.json` as a new workflow
-3. Configure credentials:
-   - OpenAI API
-   - Supabase (URL and anon key)
-   - Gmail (for email delivery)
-   - PDFShift (for PDF generation)
-
-### 3. Install Custom Nodes
-
-Copy the custom node files from `nodes/` to your n8n custom nodes directory:
-
-```bash
-# For n8n self-hosted
-cp -r nodes/ ~/.n8n/custom/
-
-# For n8n cloud, use the n8n UI to add custom nodes
-```
-
-### 4. Setup Scheduler Service
-
-```bash
-cd scheduler
-npm install
-cp .env.example .env
-# Edit .env with your Redis and n8n webhook URLs
-npm start
-```
-
-### 5. Setup Trending Scraper
-
-```bash
-cd trending-scraper
-npm install
-cp .env.example .env
-# Edit .env with your n8n webhook URL
-npm start
-```
-
-### 6. Setup Dashboard
-
-```bash
-cd dashboard
-npm install
-# Create .env file with:
-# VITE_API_BASE=http://localhost:3001/api
-# VITE_N8N_WEBHOOK=https://your-n8n-instance.com/webhook/generate-hungarian-content
-npm run dev
-```
+The recommended setup is using Docker Compose. For manual setup of each service, refer to the `README.md` inside each service's directory.
 
 ## ⚙️ Configuration
 
-### Environment Variables
+The entire platform is configured through `.env` files in each service's directory and the `docker-compose.yml` file.
 
-#### Scheduler Service (`scheduler/.env`)
-```env
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-PORT=3001
-N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/publish
-```
-
-#### Trending Scraper (`trending-scraper/.env`)
-```env
-N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/trending-topics
-SCRAPE_INTERVAL=0 */6 * * *
-```
-
-#### Dashboard (`dashboard/.env`)
-```env
-VITE_API_BASE=http://localhost:3001/api
-VITE_N8N_WEBHOOK=https://your-n8n-instance.com/webhook/generate-hungarian-content
-```
-
-### n8n Variables
-
-Set these in your n8n instance settings:
-
-- `SUPABASE_URL`: Your Supabase project URL
-- `SUPABASE_ANON_KEY`: Your Supabase anonymous key
-- `DEEPL_API_KEY`: DeepL API key (optional)
+- **`docker-compose.yml`**: Defines the services, ports, and volumes.
+- **`dashboard/.env`**: Contains API keys for the frontend application (Vite prefixes are required).
+- **`scheduler/.env`**: Contains API keys and service configurations for the backend scheduler.
+- **`trending-scraper/.env`**: Contains the webhook URL for the scraper service.
+- **`n8n` service `environment` in `docker-compose.yml`**: Contains Supabase credentials for n8n.
 
 ## 📖 Usage
 
 ### Basic Content Generation
 
-1. Open `index.html` in a browser
-2. Fill in the form:
-   - User ID
-   - Organization type
-   - Keyword/topic
-   - Topics/hashtags
-   - Email for delivery
-3. Submit the form
-4. Receive PDF report via email
+1. Open your n8n instance at `http://localhost:5678`.
+2. Import the workflows from the `/workflows` directory.
+3. Configure your credentials in n8n for the services you want to use (e.g., OpenAI, Twitter).
+4. Trigger the workflows via the webhooks defined in them.
 
 ### Advanced Features
 
-#### Scheduled Publishing
-
-1. Use the React dashboard (`dashboard/`)
-2. Select a generated content idea
-3. Choose publishing channels
-4. Set schedule time
-5. Content will be published automatically
-
-#### Multi-Channel Publishing
-
-In the workflow, after content generation:
-1. Content is enhanced with AI (summaries, headlines, sentiment)
-2. Translated if needed
-3. Published to selected channels via custom nodes
-
-#### Trending Topics Integration
-
-The trending scraper automatically:
-1. Scrapes Google Trends, Twitter, and GDELT
-2. Sends trending topics to n8n webhook
-3. Workflow can use these for content generation
+- **Scheduled Publishing**: Use the dashboard to schedule content for future publication.
+- **Multi-Channel Publishing**: Configure the `publishing-hub.json` workflow to publish to multiple channels.
+- **Trending Topics**: The scraper service will automatically feed trending topics to your n8n workflows.
 
 ## 🎯 Use Cases
 

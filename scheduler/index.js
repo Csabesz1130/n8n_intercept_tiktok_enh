@@ -283,6 +283,28 @@ app.get('/api/trends', async (req, res) => {
   }
 });
 
+// API endpoint for analytics (for dashboard)
+app.get('/api/analytics', async (req, res) => {
+  // In a real implementation, you would fetch this data from Supabase
+  const mockAnalytics = {
+    totalPosts: 125,
+    totalLikes: 1.2,
+    totalShares: 450,
+    engagementRate: 0.05,
+    postsByChannel: [
+      { channel: 'Twitter', count: 50 },
+      { channel: 'LinkedIn', count: 30 },
+      { channel: 'Mastodon', count: 25 },
+      { channel: 'Newsletter', count: 20 },
+    ],
+  };
+
+  res.json({
+    success: true,
+    analytics: mockAnalytics,
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   const redisStatus = connection && connection.status === 'ready' ? 'connected' : 'disconnected';

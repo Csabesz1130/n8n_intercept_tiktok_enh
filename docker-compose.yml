@@ -64,6 +64,39 @@ services:
       - scheduler
     restart: unless-stopped
 
+  # TikTok Scraper
+  tiktok-scraper:
+    build:
+      context: ./tiktok-scraper
+      dockerfile: Dockerfile
+    container_name: viral-n8n-tiktok-scraper
+    ports:
+      - "3002:3002"
+    restart: unless-stopped
+
+  # n8n for workflow automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: viral-n8n-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=development
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_WEBHOOK_URL=http://localhost:5678/webhook/
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./nodes:/home/node/.n8n/custom
+    depends_on:
+      - redis
+    restart: unless-stopped
+
 volumes:
   redis-data:
+  n8n-data:
 
